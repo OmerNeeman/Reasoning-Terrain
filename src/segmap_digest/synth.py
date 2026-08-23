@@ -236,3 +236,54 @@ def generate(
         labels=out, gsd=gsd,
         dem=elev.astype(np.float32) if with_dem else None,
     )
+
+
+def second_date(base: LabelRaster, seed: int = 99) -> LabelRaster:
+    """A plausible 'date 2' for the same tile, for S6 change reasoning.
+
+    Deliberately mixes the four things a change detector has to tell apart:
+    seasonal phenology, vegetation succession, genuine construction, and label
+    noise -- including a lithology flip, which cannot physically happen and is
+    always a labelling error.
+    """
+    rng = np.random.default_rng(seed)
+    out = base.labels.copy()
+    h, w = out.shape
+    s = max(h / 1024.0, 0.25)
+
+    # 1. Season: the dry season has arrived.
+    out[out == cid("GreenGrassland")] = cid("DryGrassland")
+
+    # 2. Succession: a burnt-then-regrowing patch shifts along the series.
+    patch = np.zeros(out.shape, dtype=bool)
+    pr, pc = int(rng.integers(0, h * 0.7)), int(rng.integers(0, w * 0.7))
+    patch[pr:pr + int(180 * s), pc:pc + int(180 * s)] = True
+    out[patch & (out == cid("Maquis"))] = cid("Garigue")
+    out[patch & (out == cid("Garigue"))] = cid("Batha")
+
+    # 3. Construction: a new building cluster on open ground.
+    br, bc = int(rng.integers(0, h * 0.8)), int(rng.integers(0, w * 0.8))
+    for _ in range(6):
+        r = br + int(rng.normal(0, 40 * s)); c = bc + int(rng.normal(0, 40 * s))
+        hh, hw = int(14 * s) or 5, int(18 * s) or 6
+        if 0 <= r < h - hh and 0 <= c < w - hw:
+            out[r - 2:r + hh + 2, c - 2:c + hw + 2] = cid("Pavement")
+            out[r:r + hh, c:c + hw] = cid("House")
+
+    # 4. Infrastructure: one dirt road gets sealed.
+    dirt = out == cid("DirtRoad")
+    comp, n = ndi.label(dirt, structure=np.ones((3, 3)))
+    if n:
+        biggest = 1 + int(np.argmax(np.bincount(comp.ravel())[1:]))
+        out[comp == biggest] = cid("PavedRoad")
+
+    # 5. Label noise, including an impossible lithology flip.
+    flip = np.zeros(out.shape, dtype=bool)
+    fr, fc = int(rng.integers(0, h * 0.8)), int(rng.integers(0, w * 0.8))
+    flip[fr:fr + int(60 * s), fc:fc + int(60 * s)] = True
+    for a, b in (("LimestoneStoneyTerrain", "DolomiteStoneyTerrain"),
+                 ("LimestoneRockyTerrain", "DolomiteRockyTerrain")):
+        out[flip & (out == cid(a))] = cid(b)
+
+    return LabelRaster(labels=out, gsd=base.gsd, transform=base.transform,
+                       crs=base.crs, dem=base.dem)

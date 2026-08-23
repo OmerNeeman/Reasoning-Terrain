@@ -155,8 +155,16 @@ def build_regions(raster: LabelRaster, min_area_px: int = 12) -> RegionIndex:
         keep[rid] = reg
 
     _attach_neighbors(glob, keep, gsd)
+
     # Renumber so region.id indexes the list, keeping RegionIndex.get() O(1).
+    # The label array must be renumbered with it -- otherwise zonal statistics
+    # keyed by region.id silently read a different region.
     remap = {r.id: i + 1 for i, r in enumerate(regions)}
+    lut = np.zeros(n_regions + 1, dtype=np.int32)
+    for old, new in remap.items():
+        lut[old] = new
+    glob = lut[glob]
+
     for r in regions:
         r.neighbors = {remap[n]: v for n, v in r.neighbors.items() if n in remap}
     for r in regions:

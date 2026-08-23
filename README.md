@@ -131,6 +131,49 @@ segmap ask --level l2 --with-audit \
 
 ---
 
+## The six solutions
+
+Shared infrastructure (taxonomy · index · digests) feeds six map-consuming
+solutions. Each has a **runnable naive implementation** and a doc with its
+heuristics, open questions, and options.
+
+```bash
+segmap solve s1                                     # audit
+segmap solve s2 --region 245                        # adjudicate
+segmap solve s3 --policy vehicles --chip 128        # triage
+segmap solve s4 --product trafficability --wet      # products
+segmap solve s5 --query "corridor PavedRoad"        # query
+segmap solve s6                                     # change
+```
+
+| | Solution | What it answers | Docs |
+|---|---|---|---|
+| **S1** | audit | which labels contradict their context, slope, or geometry | [S1](docs/solutions/S1-audit.md) |
+| **S2** | adjudicate | given a suspect region, what *is* it — or is it undecidable | [S2](docs/solutions/S2-adjudicate.md) |
+| **S3** | triage | which chips are worth sending to an expensive detector | [S3](docs/solutions/S3-triage.md) |
+| **S4** | products | trafficability, concealment, drainage, fire fuel | [S4](docs/solutions/S4-products.md) |
+| **S5** | query | counts, areas, distances, movement corridors | [S5](docs/solutions/S5-query.md) |
+| **S6** | change | semantic diff: phenology vs succession vs real change | [S6](docs/solutions/S6-change.md) |
+
+Three things the naive versions already get right, because they're the parts
+that are easy to get wrong later:
+
+- **S2 abstains.** `UNDECIDABLE-NEEDS-geological-map` is a first-class verdict.
+  Limestone/Dolomite/Nari aren't separable without that layer, and a system that
+  picks one confidently manufactures corruptions. Net gain is corrections minus
+  corruptions, and it can be negative.
+- **S3 keeps a control set.** 3% of *rejected* chips get dispatched anyway. It's
+  the only unbiased recall signal you'll ever have; without it there is no
+  evidence the other 90% of savings is safe, and no alarm when you over-prune.
+- **S6 separates phenology from change.** On the fixture, ~76% of differing area
+  is plausibly real — a raw pixel diff would have called 100% of it change. A
+  `Limestone→Dolomite` transition is reported as `impossible`, i.e. a label
+  error, not a landslide.
+
+**Every heuristic constant in `solutions/` is a guess.** They're grouped at the
+top of each module, named, and tabulated in the docs with a "where this should
+actually come from" column. Don't treat any number they produce as a finding.
+
 ## Design rules this POC follows
 
 These are the things that were easy to get wrong:
@@ -161,9 +204,17 @@ These are the things that were easy to get wrong:
 3. **Add the lithology map join.** Limestone / dolomite / nari are not separable
    in RGB even for a human expert — that separation is a map lookup, and it's
    the largest single accuracy lever available.
-4. **Then** build the detection-triage policy layer on top of the chip index
-   (policy JSON → deterministic scorer → budgeted selection → outcome log with a
-   rejected-chip control set).
+4. **Answer the blocking question in each solution doc.** They're the first
+   numbered item in each:
+   - S1 — what's the false-positive rate? (needs ~150 reviewed regions)
+   - S2 — is the true class even in the shortlist?
+   - S3 — what's the detector's cost model: per call, per megapixel, or per second?
+   - S4 — is a 0–1 score the right output, or GO/SLOW-GO/NO-GO?
+   - S5 — does the LLM emit tool calls, or write code against the index?
+   - S6 — run the null test and the 1-px-shift test; co-registration is the threat.
+5. **Then** replace the guessed constants with measured ones, starting with S3's
+   `class_weights` (from a detector outcome log) and S4's per-class `traffic`
+   values (from whoever owns vehicle doctrine).
 
 ## Tests
 

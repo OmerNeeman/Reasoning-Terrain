@@ -113,6 +113,71 @@ def cmd_audit(args) -> None:
     print(audit_mod.to_tsv(findings, limit=args.limit))
 
 
+def cmd_solve(args) -> None:
+    from .solutions import s1_audit, s2_adjudicate, s3_triage, s4_products, s5_query, s6_change
+
+    r = _load(args)
+
+    if args.solution == "s1":
+        ridx = build_regions(r, min_area_px=args.min_px)
+        print(s1_audit.render(s1_audit.run(ridx, min_area_m2=args.min_area),
+                              budget=args.budget))
+
+    elif args.solution == "s2":
+        ridx = build_regions(r, min_area_px=args.min_px)
+        if args.region:
+            print(s2_adjudicate.render(s2_adjudicate.adjudicate(ridx, args.region)))
+            return
+        # No region given: adjudicate whatever S1 flagged hardest.
+        report = s1_audit.run(ridx, min_area_m2=args.min_area)
+        rids, seen = [], set()
+        for f in report.findings:
+            if f.region_id not in seen:
+                seen.add(f.region_id)
+                rids.append(f.region_id)
+            if len(rids) >= args.budget:
+                break
+        adjs = [s2_adjudicate.adjudicate(ridx, rid) for rid in rids]
+        print(f"# adjudicating the top {len(adjs)} regions flagged by S1\n")
+        for a in adjs:
+            print(s2_adjudicate.render(a), "\n")
+        print(s2_adjudicate.ledger(adjs))
+
+    elif args.solution == "s3":
+        cidx = build_chips(r, size=args.chip)
+        policy, sel = s3_triage.run(cidx, args.policy, budget_frac=args.budget_frac)
+        print(s3_triage.render(sel, policy))
+        if args.save_policy:
+            policy.to_json(args.save_policy)
+            print(f"\n# policy written to {args.save_policy}", file=sys.stderr)
+
+    elif args.solution == "s4":
+        kw = {"vehicle": args.vehicle, "wet": args.wet} if args.product == "trafficability" else {}
+        arr = s4_products.compute(r, args.product, **kw)
+        ridx = build_regions(r, min_area_px=args.min_px) if args.regions else None
+        title = args.product + (f" ({args.vehicle}{', wet' if args.wet else ''})"
+                                if args.product == "trafficability" else "")
+        print(f"# S4 product: {title}")
+        print(s4_products.summarise(r, arr, ridx))
+        if args.out:
+            s4_products.to_png(arr, args.out)
+            print(f"\n# wrote {args.out}", file=sys.stderr)
+
+    elif args.solution == "s5":
+        ridx = build_regions(r, min_area_px=args.min_px)
+        if not args.query:
+            raise SystemExit("s5 needs a query, e.g. --query 'corridor PavedRoad'")
+        try:
+            print(s5_query.query(args.query, r, ridx).render(limit=args.budget))
+        except s5_query.QueryError as exc:
+            raise SystemExit(f"query error: {exc}")
+
+    elif args.solution == "s6":
+        t2 = (loader.load(args.second, gsd=args.gsd) if args.second
+              else synth.second_date(r, seed=args.seed + 92))
+        print(s6_change.render(s6_change.compare(r, t2), limit=args.budget))
+
+
 def cmd_ask(args) -> None:
     from . import ask as ask_mod
 
@@ -179,6 +244,32 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--min-area", type=float, default=25.0)
     p.add_argument("--limit", type=int, default=None)
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("solve", help="run one of the six map-consuming solutions")
+    _add_input_args(p)
+    p.add_argument("solution", choices=["s1", "s2", "s3", "s4", "s5", "s6"])
+    p.add_argument("--min-px", type=int, default=12)
+    p.add_argument("--min-area", type=float, default=25.0)
+    p.add_argument("--budget", type=int, default=25,
+                   help="s1/s2: findings to review; s5/s6: rows to print")
+    p.add_argument("--region", type=int, help="s2: region id to adjudicate")
+    p.add_argument("--policy", default="vehicles",
+                   choices=["vehicles", "structures", "oov"], help="s3")
+    p.add_argument("--budget-frac", type=float, default=0.20,
+                   help="s3: fraction of chips to dispatch")
+    p.add_argument("--save-policy", help="s3: write the policy JSON here")
+    p.add_argument("--chip", type=int, default=256, help="s3: chip size in px")
+    p.add_argument("--product", default="trafficability",
+                   choices=["trafficability", "concealment", "drainage", "fire_fuel"],
+                   help="s4")
+    p.add_argument("--vehicle", default="wheeled",
+                   choices=["wheeled", "tracked", "foot"], help="s4")
+    p.add_argument("--wet", action="store_true", help="s4: wet-season trafficability")
+    p.add_argument("--regions", action="store_true", help="s4: include per-region table")
+    p.add_argument("--query", help="s5: e.g. 'find House minarea 40' or 'corridor PavedRoad'")
+    p.add_argument("--second", help="s6: second-date label raster (default: synthetic)")
+    p.add_argument("-o", "--out", help="s4: write a PNG of the product")
+    p.set_defaults(func=cmd_solve)
 
     p = sub.add_parser("ask", help="send a digest + question to Claude")
     _add_input_args(p)
