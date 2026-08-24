@@ -15,7 +15,9 @@ dependencies = [
 
 [project.optional-dependencies]
 geo = ["rasterio>=1.3"]
-llm = ["anthropic>=0.60"]
+# `segmap ask` drives the SDK's beta tool runner and hands beta_tool an explicit
+# input_schema; both are recent.
+llm = ["anthropic>=0.116"]
 dev = ["pytest>=7"]
 
 [project.scripts]

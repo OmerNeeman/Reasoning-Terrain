@@ -309,9 +309,12 @@ def build(
     # --- S5 ----------------------------------------------------------------
     sec("S5 — queries", "s5")
     S.append('<p class="note">Answered in code, not by a model. The LLM\'s job is '
-             'to choose the verb and arguments; the arithmetic stays here.</p>')
+             'to choose the verb and arguments — these verbs are the tool surface '
+             'behind <code>segmap ask</code> — and the arithmetic stays here. '
+             'Each result lists the region ids it was computed from.</p>')
     for q in ("count Car", "count House", "area Maquis",
-              "find House minarea 10", "corridor PavedRoad vehicle wheeled",
+              "find House minarea 10", "distance House PavedRoad",
+              "corridor PavedRoad vehicle wheeled",
               "corridor PavedRoad vehicle foot"):
         try:
             S.append(f"<h3>{_esc(q)}</h3>")

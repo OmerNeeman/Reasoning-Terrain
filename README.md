@@ -154,13 +154,32 @@ rid   class            kind                       sev  area_m2  message
 Deciding which candidates are real is the LLM's job. *Enumerating* them is not,
 and paying an LLM to enumerate would defeat the point.
 
-**[`ask.py`](src/segmap_digest/ask.py)** — optional. Sends a digest plus a
-question to Claude (`claude-opus-5`, adaptive thinking, class legend behind a
-prompt-cache breakpoint so iterating on questions against one tile is cheap).
+**[`tools.py`](src/segmap_digest/tools.py) + [`ask.py`](src/segmap_digest/ask.py)**
+— optional. `segmap ask` gives Claude (`claude-opus-5`, adaptive thinking, class
+legend behind a prompt-cache breakpoint) the **S5 query verbs as tools** and runs
+the SDK's tool runner over them. The model chooses the verb and the arguments;
+`s5_query` does the arithmetic. It cannot return a count, an area or a distance
+that the code did not compute, because it has no other way to see the raster.
 
 ```bash
 export ANTHROPIC_API_KEY=...
-segmap ask --level l2 --with-audit \
+segmap ask "How much of this tile can a wheeled vehicle reach from the road network?"
+segmap tools                    # the tool definitions, no SDK or key needed
+```
+
+Every tool result carries the region ids it was computed from, and the answer is
+followed by the call log, so any number in it can be reproduced with
+`segmap solve s5 --query '...'`. Results come back as one of four statuses:
+`ok`, `empty` (a measured zero — a real finding), `unanswerable` (vehicle type,
+building function, fence presence, anything about colour: the label raster
+cannot answer it, and an empty table saying "none found" would be a wrong
+answer), or `error`.
+
+For interpretive questions no verb covers, `--digest` keeps the old path — send
+a digest and let the model read it:
+
+```bash
+segmap ask --digest --level l2 --with-audit \
   "Which regions are most likely misclassified, and what data would settle each?"
 ```
 
@@ -245,7 +264,9 @@ These are the things that were easy to get wrong:
    - S2 — is the true class even in the shortlist?
    - S3 — what's the detector's cost model: per call, per megapixel, or per second?
    - S4 — is a 0–1 score the right output, or GO/SLOW-GO/NO-GO?
-   - S5 — does the LLM emit tool calls, or write code against the index?
+   - S5 — ~~tool calls or code against the index?~~ **decided: tool calls.**
+     Next: ten real analyst questions, to find out whether six verbs is the
+     right surface — and one live run, which has not happened yet.
    - S6 — run the null test and the 1-px-shift test; co-registration is the threat.
 5. **Then** replace the guessed constants with measured ones, starting with S3's
    `class_weights` (from a detector outcome log) and S4's per-class `traffic`

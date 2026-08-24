@@ -205,16 +205,46 @@ def cmd_solve(args) -> None:
         print(s6_change.render(s6_change.compare(r, t2), limit=args.budget))
 
 
+def cmd_tools(args) -> None:
+    """The tool definitions, offline. No SDK and no API key needed to see the
+    surface the model is given."""
+    import json
+
+    from . import tools as tools_mod
+
+    print(json.dumps(tools_mod.definitions(), indent=2))
+
+
 def cmd_ask(args) -> None:
     from . import ask as ask_mod
 
     r = _load(args)
+
+    if not args.digest:
+        # Default: the model plans, the code computes. Nothing in the answer is
+        # estimated from a table.
+        ridx = build_regions(r, min_area_px=args.min_px)
+        print(f"# {len(ridx.regions)} regions indexed; answering with tool calls",
+              file=sys.stderr)
+        answer = ask_mod.ask_tools(
+            args.question, r, ridx,
+            legend=taxonomy_legend(compact=False),
+            model=args.model, effort=args.effort, show_thinking=args.thinking,
+        )
+        print(answer.text)
+        print("\n---")
+        print(answer.audit())
+        if answer.usage:
+            print(f"# {answer.usage}")
+        return
+
     text = _build_digest(args.level, r, args)
     if args.with_audit:
         ridx = build_regions(r, min_area_px=args.min_px)
         text += "\n\n" + audit_mod.to_tsv(audit_mod.audit(ridx), limit=60)
-    print(f"# digest: {args.level}, ~{digests.estimate_tokens(text)} tokens",
-          file=sys.stderr)
+    print(f"# digest: {args.level}, ~{digests.estimate_tokens(text)} tokens "
+          f"(interpretive path -- numbers in the answer are the model's reading "
+          f"of a table, not computed)", file=sys.stderr)
     print(ask_mod.ask(
         text, args.question,
         legend=taxonomy_legend(compact=False),
@@ -306,12 +336,20 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("-o", "--out", help="s4: write a PNG of the product")
     p.set_defaults(func=cmd_solve)
 
-    p = sub.add_parser("ask", help="send a digest + question to Claude")
+    p = sub.add_parser("tools", help="print the query tool definitions as JSON")
+    p.set_defaults(func=cmd_tools)
+
+    p = sub.add_parser("ask", help="ask Claude a question; answers are computed "
+                                   "by the query tools, not estimated")
     _add_input_args(p)
     p.add_argument("question")
-    p.add_argument("--level", choices=list(digests.LEVELS), default="l2")
+    p.add_argument("--digest", action="store_true",
+                   help="interpretive path: send a digest instead of the tools, "
+                        "for questions no verb can answer")
+    p.add_argument("--level", choices=list(digests.LEVELS), default="l2",
+                   help="--digest only: which representation level to send")
     p.add_argument("--with-audit", action="store_true",
-                   help="append audit findings to the digest")
+                   help="--digest only: append audit findings to the digest")
     p.add_argument("--grid", type=int, default=16)
     p.add_argument("--purity", type=float, default=0.92)
     p.add_argument("--chip", type=int, default=256)

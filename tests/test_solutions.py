@@ -188,6 +188,47 @@ def test_s5_corridor_reports_its_threshold(tile, ridx):
     assert "threshold" in res.note, "a corridor answer must state its main assumption"
 
 
+def test_s5_distance_is_a_true_minimum(tile, ridx):
+    """Closest approach, not centroid-to-centroid: check against brute force."""
+    res = s5_query.query("distance House Water", tile, ridx)
+    a = np.argwhere(tile.labels == cid("House"))
+    b = np.argwhere(tile.labels == cid("Water"))
+    if not len(a) or not len(b):
+        pytest.skip("fixture has no House/Water pair")
+    brute = min(np.hypot(*(pa - pb)) for pa in a for pb in b[::7]) * tile.gsd
+    assert res.scalar <= brute + 1e-6
+    assert res.scalar == pytest.approx(
+        s5_query.query("distance Water House", tile, ridx).scalar, abs=1e-6), \
+        "distance must be symmetric"
+
+
+def test_s5_results_carry_their_region_ids(tile, ridx):
+    res = s5_query.query("find House", tile, ridx)
+    assert res.ids == [int(r[0]) for r in res.rows]
+    assert set(res.ids) <= {r.id for r in ridx.regions}
+    assert "evidence" in res.render()
+
+
+def test_s5_describe_fractions_sum_to_one(tile, ridx):
+    res = s5_query.query("describe", tile, ridx)
+    assert sum(float(r[3]) for r in res.rows) == pytest.approx(1.0, abs=1e-3)
+    assert res.id_kind == "class"
+
+
+def test_s5_abstains_on_slope_without_a_dem():
+    """0.0 degrees means unmeasured here, and answering from it is a wrong
+    answer that looks like a right one."""
+    flat = synth.generate(size=128, seed=8, with_dem=False)
+    fidx = build_regions(flat)
+    with pytest.raises(s5_query.Unanswerable, match="DEM"):
+        s5_query.query("find House slope > 10", flat, fidx)
+
+
+def test_s5_unknown_class_is_unanswerable_not_empty(tile, ridx):
+    with pytest.raises(s5_query.Unanswerable, match="vocabulary"):
+        s5_query.query("find Fence", tile, ridx)
+
+
 # --- S6 --------------------------------------------------------------------
 
 def test_s6_null_test(tile):

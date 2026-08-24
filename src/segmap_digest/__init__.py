@@ -11,7 +11,7 @@ Quick start:
     print(digests.l2_regions(build_regions(tile), limit=50))
 """
 
-from . import audit, digests, loader, synth, taxonomy  # noqa: F401
+from . import audit, digests, loader, synth, taxonomy, tools  # noqa: F401
 from .index import build_chips, build_regions  # noqa: F401
 from .loader import LabelRaster, load  # noqa: F401
 
