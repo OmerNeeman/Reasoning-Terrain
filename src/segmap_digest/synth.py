@@ -121,7 +121,7 @@ def generate(
     put(bas & steep & (stone > 0.62), "BasaltBoulder")
     put(bas & (slope > 12), "BasaltRockyTerrain")
     put(bas & (stone > 0.5), "BasaltStoneyTerrain")
-    put(bas, "Clayeysoil")
+    put(bas, "ClayeySoil")
 
     # Nari caps.
     nari = litho == "Nari"
@@ -148,7 +148,7 @@ def generate(
     # Vegetation overprints gentle-to-mid slopes; the degradation series tracks
     # moisture and aspect.
     veg_ok = (slope < 26) & np.isin(out, [cid(n) for n in (
-        "TerraRosa", "Clayeysoil", "Rendzina", "LimestoneStoneyTerrain",
+        "TerraRosa", "ClayeySoil", "Rendzina", "LimestoneStoneyTerrain",
         "DolomiteStoneyTerrain", "NariStoneyTerrain", "BasaltStoneyTerrain",
         "LimestoneTerrace", "DolomiteTerrace", "NariTerrace", "MaralTerrace")])
     moisture = 0.55 * veg + 0.30 * np.clip(northness, 0, 1) + 0.15 * wetness
@@ -168,7 +168,7 @@ def generate(
 
     # --- agriculture on flat deep soil ------------------------------------
     flat = (slope < 8) & np.isin(out, [
-        cid("ClayeyDeepSoil"), cid("Clayeysoil"), cid("TerraRosa"),
+        cid("ClayeyDeepSoil"), cid("ClayeySoil"), cid("TerraRosa"),
         cid("DryGrassland"), cid("Batha"), cid("Rendzina")])
     for k, name in enumerate(("IrrigatedField", "UnirrigatedOrchard", "IrrigatedOrchard")):
         for _ in range(2):

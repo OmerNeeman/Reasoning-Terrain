@@ -77,6 +77,14 @@ def _check_priors(ridx: RegionIndex, r: Region) -> list[Finding]:
                     f"no boundary with any of {{{', '.join(p.others)}}} -- {p.why}",
                 ))
 
+        # No DEM means mean_slope is 0.0 and aspect_circvar is 0.0 for *every*
+        # region. Running these checks anyway converts "we never measured slope"
+        # into a severity-0.80 finding against every badlands polygon on the
+        # map, which then dominates the worklist. Abstaining is the honest move;
+        # the missing input is already reported once, at the top of the report.
+        if not ridx.has_terrain:
+            continue
+
         if p.slope_deg is not None:
             lo, hi = p.slope_deg
             if not (lo <= r.mean_slope <= hi):
@@ -158,7 +166,7 @@ def _check_inclusion(ridx: RegionIndex, r: Region) -> list[Finding]:
         return [Finding(
             r.id, r.class_name, "oov-candidate", 0.5, r.area_m2,
             f"small {r.class_name} speck enclosed by {BY_ID[host].name} -- by "
-            f"definition outside the 45-class vocabulary; prime target for a "
+            f"definition outside the 47-class vocabulary; prime target for a "
             f"detector pass",
         )]
     return [Finding(

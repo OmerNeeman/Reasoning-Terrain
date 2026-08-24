@@ -141,7 +141,7 @@ def _find(q, verb, rest, raster: LabelRaster, ridx: RegionIndex) -> QueryResult:
 def _corridor(q, rest, raster: LabelRaster, ridx: RegionIndex) -> QueryResult:
     """Connected trafficable ground reachable from a seed class -- the
     'where can a vehicle actually get to' question."""
-    from .s4_products import VEHICLES, trafficability
+    from .s4_products import VEHICLES, compute
 
     if not rest:
         raise QueryError("corridor needs a seed class, e.g. `corridor PavedRoad`")
@@ -156,7 +156,9 @@ def _corridor(q, rest, raster: LabelRaster, ridx: RegionIndex) -> QueryResult:
     if vehicle not in VEHICLES:
         raise QueryError(f"unknown vehicle {vehicle!r}; try {list(VEHICLES)}")
 
-    traf = trafficability(raster, vehicle=vehicle)
+    # via compute(), not trafficability() directly, so nodata scores 0 and the
+    # corridor cannot bridge two real areas through unclassified ground.
+    traf = compute(raster, "trafficability", vehicle=vehicle)
     passable = traf >= CORRIDOR_MIN_TRAFFIC
     comp, n = ndi.label(passable, structure=np.ones((3, 3)))
     if n == 0:
@@ -164,22 +166,27 @@ def _corridor(q, rest, raster: LabelRaster, ridx: RegionIndex) -> QueryResult:
                            f"no ground passable to {vehicle} at threshold "
                            f"{CORRIDOR_MIN_TRAFFIC}")
 
-    seed_ids = set(np.unique(comp[raster.labels == seed])) - {0}
+    seed_mask = raster.labels == seed
+    if raster.valid is not None:
+        seed_mask &= raster.valid
+    seed_ids = set(np.unique(comp[seed_mask])) - {0}
     px_m2 = raster.pixel_area_m2
     sizes = np.bincount(comp.ravel())
+    # Classified ground, not the whole extent: on a cropped tile those differ by
+    # a third, and "96% of the tile is reachable" would be counting the margin.
+    total = raster.n_valid * px_m2
     rows = []
     for c in sorted(seed_ids, key=lambda c: -sizes[c]):
         a = sizes[c] * px_m2
         if a < CORRIDOR_MIN_AREA_M2:
             continue
-        rows.append((int(c), f"{a:.0f}", f"{a / (raster.labels.size * px_m2):.1%}"))
+        rows.append((int(c), f"{a:.0f}", f"{a / total:.1%}"))
 
     reachable = sum(sizes[c] for c in seed_ids) * px_m2
-    total = raster.labels.size * px_m2
     return QueryResult(
         q, f"corridor ({vehicle}, seeded from {rest[0]})", rows,
         ("component", "area_m2", "tile_frac"), reachable,
-        f"{reachable / total:.1%} of the tile is reachable from {rest[0]} "
+        f"{reachable / total:.1%} of the classified area is reachable from {rest[0]} "
         f"without leaving ground passable to a {vehicle} vehicle "
         f"(threshold {CORRIDOR_MIN_TRAFFIC}, slope limit "
         f"{VEHICLES[vehicle].max_slope_deg} deg)",

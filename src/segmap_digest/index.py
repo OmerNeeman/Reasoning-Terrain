@@ -50,6 +50,12 @@ class Region:
 class RegionIndex:
     regions: list[Region]
     label_array: np.ndarray      # (H, W) int32, region ids (0 = none)
+    # False when no DEM was supplied. Without it every `mean_slope` is 0.0 and
+    # every `aspect_circvar` is 0.0 -- which are perfectly valid-looking numbers
+    # that happen to mean "unmeasured". Anything reasoning over them has to know
+    # the difference, or it reports "slope 0.0 outside required 8-90" as a
+    # finding about the terrain rather than about the missing input.
+    has_terrain: bool = False
 
     def by_class(self, class_id: int) -> list[Region]:
         return [r for r in self.regions if r.class_id == class_id]
@@ -70,30 +76,43 @@ def build_regions(raster: LabelRaster, min_area_px: int = 12) -> RegionIndex:
     labels = raster.labels
     h, w = labels.shape
     gsd = raster.gsd
+    valid = raster.valid
 
-    # Connected components per class, merged into one global id space.
+    # Connected components per class, merged into one global id space. Nodata is
+    # excluded outright: on a cropped export the nodata value *is* the id of
+    # Unclassified, so leaving it in makes one continent-sized bogus region and
+    # gives every real region on the crop edge a fictitious neighbour.
     glob = np.zeros((h, w), dtype=np.int32)
     next_id = 1
     conn = np.ones((3, 3), dtype=bool)
     class_of: list[int] = [0]                     # index 0 unused
 
-    for c in np.unique(labels):
-        comp, n = ndi.label(labels == c, structure=conn)
+    present = np.unique(labels if valid is None else labels[valid])
+    for c in present:
+        mask = labels == c
+        if valid is not None:
+            mask &= valid
+        comp, n = ndi.label(mask, structure=conn)
+        del mask
         if n == 0:
             continue
         nz = comp > 0
         glob[nz] = comp[nz] + (next_id - 1)
         class_of.extend([int(c)] * n)
         next_id += n
+        del comp, nz
 
     n_regions = next_id - 1
     if n_regions == 0:
-        return RegionIndex([], glob)
+        return RegionIndex([], glob, has_terrain=raster.dem is not None)
 
     areas = np.bincount(glob.ravel(), minlength=n_regions + 1)[1:]
     perim = _perimeter_counts(glob, n_regions)
     slices = ndi.find_objects(glob)
-    centroids = ndi.center_of_mass(np.ones_like(glob), glob, range(1, n_regions + 1))
+    # uint8 weights, not `ones_like(glob)`: an int32 copy of the label array is
+    # 4 bytes/px of pure waste, which on a mosaic is several GB.
+    centroids = ndi.center_of_mass(np.ones(glob.shape, dtype=np.uint8), glob,
+                                   range(1, n_regions + 1))
 
     # Terrain attributes. Half the taxonomy is morphology -- these are what
     # actually separate a dip slope from a terrace, and RGB cannot.
@@ -169,7 +188,7 @@ def build_regions(raster: LabelRaster, min_area_px: int = 12) -> RegionIndex:
         r.neighbors = {remap[n]: v for n, v in r.neighbors.items() if n in remap}
     for r in regions:
         r.id = remap[r.id]
-    return RegionIndex(regions, glob)
+    return RegionIndex(regions, glob, has_terrain=raster.dem is not None)
 
 
 def _perimeter_counts(glob: np.ndarray, n: int) -> np.ndarray:
@@ -186,6 +205,10 @@ def _perimeter_counts(glob: np.ndarray, n: int) -> np.ndarray:
 
 
 def _attach_neighbors(glob: np.ndarray, keep: dict[int, Region], gsd: float) -> None:
+    # `glob.max()` is a full-array scan. It used to sit inside the per-pair loop,
+    # which made this O(n_pairs * n_pixels) -- unnoticeable on a 1024 px fixture,
+    # and effectively a hang on a real 8192 px tile. Hoist it.
+    stride = int(glob.max()) + 1
     pairs: dict[tuple[int, int], int] = {}
     for da, db in ((1, 0), (0, 1)):
         a = glob[:glob.shape[0] - da, :glob.shape[1] - db]
@@ -195,11 +218,11 @@ def _attach_neighbors(glob: np.ndarray, keep: dict[int, Region], gsd: float) -> 
             continue
         ka, kb = a[m].astype(np.int64), b[m].astype(np.int64)
         lo, hi = np.minimum(ka, kb), np.maximum(ka, kb)
-        key = lo * (glob.max() + 1) + hi
+        key = lo * stride + hi
         uniq, cnt = np.unique(key, return_counts=True)
-        for k, c in zip(uniq, cnt):
-            i, j = divmod(int(k), int(glob.max() + 1))
-            pairs[(i, j)] = pairs.get((i, j), 0) + int(c)
+        for k, c in zip(uniq.tolist(), cnt.tolist()):
+            i, j = divmod(k, stride)
+            pairs[(i, j)] = pairs.get((i, j), 0) + c
 
     for (i, j), c in pairs.items():
         shared = c * gsd
@@ -217,7 +240,7 @@ class Chip:
     row: int
     col: int
     bbox: tuple[int, int, int, int]
-    class_frac: np.ndarray            # (45,) area fractions, sums to 1
+    class_frac: np.ndarray            # (N_CLASSES,) area fractions over valid px
     entropy: float                    # 0 = uniform chip, high = interface-rich
     n_classes: int
     edge_density: float               # class boundary length / chip area (1/m)
@@ -236,7 +259,7 @@ class ChipIndex:
     gsd: float
 
     def as_array(self) -> np.ndarray:
-        """(n_chips, 45) fraction matrix -- the input to a policy scorer."""
+        """(n_chips, N_CLASSES) fraction matrix -- the input to a policy scorer."""
         return np.stack([c.class_frac for c in self.chips]) if self.chips else np.zeros((0, N_CLASSES))
 
 
@@ -247,56 +270,72 @@ def build_chips(
     anchors: tuple[str, ...] = ANCHOR_CLASSES,
 ) -> ChipIndex:
     labels = raster.labels
+    valid = raster.valid
     h, w = labels.shape
     stride = stride or size
     gsd = raster.gsd
 
+    boxes = [(r0, c0, min(r0 + size, h), min(c0 + size, w))
+             for r0 in range(0, max(h - size + 1, 1), stride)
+             for c0 in range(0, max(w - size + 1, 1), stride)]
+
     # Distance transforms once per tile, reused by every query. This is the
     # expensive part and it is query-independent by design.
-    dist: dict[str, np.ndarray] = {}
+    #
+    # One anchor at a time, reduced to per-chip minima before the next is
+    # computed. Keeping all of them costs 8 bytes/px/anchor -- 112 GB for seven
+    # anchors over a 2 Gpx mosaic -- and the only thing ever read back out is
+    # one number per chip.
+    dist: dict[str, list[float]] = {}
     for name in anchors:
         mask = labels == cid(name)
-        dist[name] = (
-            ndi.distance_transform_edt(~mask) * gsd if mask.any()
-            else np.full(labels.shape, np.inf, dtype=np.float64)
-        )
+        if valid is not None:
+            mask &= valid
+        if not mask.any():
+            dist[name] = [float("inf")] * len(boxes)
+            continue
+        field = ndi.distance_transform_edt(~mask)
+        del mask
+        dist[name] = [float(field[r0:r1, c0:c1].min()) * gsd
+                      for r0, c0, r1, c1 in boxes]
+        del field
 
     chips: list[Chip] = []
-    n = 0
-    for r0 in range(0, max(h - size + 1, 1), stride):
-        for c0 in range(0, max(w - size + 1, 1), stride):
-            r1, c1 = min(r0 + size, h), min(c0 + size, w)
-            sub = labels[r0:r1, c0:c1]
-            npx = sub.size
-            hist = np.bincount(sub.ravel(), minlength=N_CLASSES).astype(np.float64)
-            frac = hist / npx
-            nz = frac[frac > 0]
-            ent = float(-(nz * np.log2(nz)).sum())
+    for n, (r0, c0, r1, c1) in enumerate(boxes):
+        sub = labels[r0:r1, c0:c1]
+        sub_valid = valid[r0:r1, c0:c1] if valid is not None else None
+        npx = sub.size if sub_valid is None else int(sub_valid.sum())
+        counted = sub if sub_valid is None else sub[sub_valid]
+        hist = np.bincount(counted.ravel(), minlength=N_CLASSES).astype(np.float64)
+        frac = hist / npx if npx else hist
+        nz = frac[frac > 0]
+        ent = float(-(nz * np.log2(nz)).sum())
 
-            ifaces: dict[tuple[int, int], float] = {}
-            total_edges = 0
-            for da, db in ((1, 0), (0, 1)):
-                a = sub[:sub.shape[0] - da, :sub.shape[1] - db]
-                b = sub[da:, db:]
-                m = a != b
-                if not m.any():
-                    continue
-                ka, kb = a[m].astype(np.int32), b[m].astype(np.int32)
-                lo, hi = np.minimum(ka, kb), np.maximum(ka, kb)
-                key = lo.astype(np.int64) * N_CLASSES + hi
-                uk, uc = np.unique(key, return_counts=True)
-                total_edges += int(uc.sum())
-                for k, c in zip(uk, uc):
-                    i, j = divmod(int(k), N_CLASSES)
-                    ifaces[(i, j)] = ifaces.get((i, j), 0.0) + float(c) * gsd
+        ifaces: dict[tuple[int, int], float] = {}
+        total_edges = 0
+        for da, db in ((1, 0), (0, 1)):
+            a = sub[:sub.shape[0] - da, :sub.shape[1] - db]
+            b = sub[da:, db:]
+            m = a != b
+            if sub_valid is not None:
+                m &= sub_valid[:sub.shape[0] - da, :sub.shape[1] - db] & sub_valid[da:, db:]
+            if not m.any():
+                continue
+            ka, kb = a[m].astype(np.int32), b[m].astype(np.int32)
+            lo, hi = np.minimum(ka, kb), np.maximum(ka, kb)
+            key = lo.astype(np.int64) * N_CLASSES + hi
+            uk, uc = np.unique(key, return_counts=True)
+            total_edges += int(uc.sum())
+            for k, c in zip(uk.tolist(), uc.tolist()):
+                i, j = divmod(k, N_CLASSES)
+                ifaces[(i, j)] = ifaces.get((i, j), 0.0) + c * gsd
 
-            chips.append(Chip(
-                id=n, row=r0 // stride, col=c0 // stride, bbox=(r0, c0, r1, c1),
-                class_frac=frac, entropy=ent, n_classes=int((hist > 0).sum()),
-                edge_density=total_edges * gsd / (npx * gsd * gsd),
-                dist_to={k: float(v[r0:r1, c0:c1].min()) for k, v in dist.items()},
-                interfaces=ifaces,
-            ))
-            n += 1
+        chips.append(Chip(
+            id=n, row=r0 // stride, col=c0 // stride, bbox=(r0, c0, r1, c1),
+            class_frac=frac, entropy=ent, n_classes=int((hist > 0).sum()),
+            edge_density=total_edges * gsd / (npx * gsd * gsd) if npx else 0.0,
+            dist_to={k: v[n] for k, v in dist.items()},
+            interfaces=ifaces,
+        ))
 
     return ChipIndex(chips, size, stride, gsd)

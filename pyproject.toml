@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "segmap-digest-poc"
 version = "0.1.0"
-description = "Digest a 45-class Smart Terrain segmentation raster into LLM-readable representations"
+description = "Digest a 47-class Smart Terrain segmentation raster into LLM-readable representations"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",

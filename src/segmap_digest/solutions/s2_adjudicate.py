@@ -100,7 +100,7 @@ class Adjudication:
 
 
 def candidates(ridx: RegionIndex, r: Region) -> list[int]:
-    """Short list. Never the full 45 -- adjudication is a multiple-choice
+    """Short list. Never the full 47 -- adjudication is a multiple-choice
     question, not a re-run of perception."""
     out = {r.class_id}
     for c in range(N_CLASSES):
@@ -140,10 +140,18 @@ def _context_score(ridx: RegionIndex, r: Region, cand: int) -> tuple[float, list
     return max(0.0, min(1.0, score)), notes
 
 
-def _morphology_score(r: Region, cand: int) -> tuple[float, list[str]]:
+def _morphology_score(r: Region, cand: int,
+                      has_terrain: bool = True) -> tuple[float, list[str]]:
     d = BY_ID[cand]
     if not d.morphology:
         return 0.5, []
+    if not has_terrain:
+        # Slope and aspect are the only inputs to this term. With no DEM they
+        # are 0.0 for every region, which scores Terrace perfectly and Boulder
+        # at zero everywhere -- a systematic push towards flat morphologies that
+        # reads exactly like evidence. Return the neutral score and say why,
+        # rather than adjudicating on a constant.
+        return 0.5, ["morphology unscored: no DEM, slope and aspect unmeasured"]
     notes = []
     lo, hi = MORPHOLOGY_SLOPE.get(d.morphology, (0.0, 90.0))
     if lo <= r.mean_slope <= hi:
@@ -190,7 +198,7 @@ def adjudicate(ridx: RegionIndex, region_id: int) -> Adjudication:
     ranked: list[tuple[str, Evidence]] = []
     for cand in candidates(ridx, r):
         ctx, n1 = _context_score(ridx, r, cand)
-        mor, n2 = _morphology_score(r, cand)
+        mor, n2 = _morphology_score(r, cand, ridx.has_terrain)
         geo, n3 = _geometry_score(r, cand)
         ranked.append((BY_ID[cand].name, Evidence(ctx, mor, geo, n1 + n2 + n3)))
     ranked.sort(key=lambda kv: -kv[1].total)

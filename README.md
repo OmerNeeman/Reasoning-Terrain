@@ -1,6 +1,6 @@
 # segmap-digest-poc
 
-Turn a **45-class Smart Terrain segmentation raster** into representations a
+Turn a **47-class Smart Terrain segmentation raster** into representations a
 reasoning LLM can actually work with — and compare those representations by
 token cost, side by side.
 
@@ -34,8 +34,43 @@ segmap compare                       # all levels, with token counts
 segmap digest l2 --limit 40          # region table
 segmap audit                         # consistency findings
 segmap preview -o tile.png           # colourised PNG, for eyeballing
-segmap legend --full                 # the 45 class definitions
+segmap legend --full                 # the 47 class definitions
 ```
+
+### On real exports
+
+```bash
+segmap report -i tile.tif        -o out/aoi          # one tile
+segmap report -i data/aoi/       -o out/aoi_mosaic   # a directory = mosaic
+segmap report -i data/aoi/ --classes ids.json -o out/aoi_mosaic
+```
+
+Three things a real Smart Terrain GeoTIFF does that the fixture does not, all
+handled in [`loader.py`](src/segmap_digest/loader.py):
+
+- **Class ids on the wire are sparse, 0..241**, not the dense 0..46 in
+  `taxonomy.py`. The exporter ships the translation as an
+  `ID_TO_LABEL_MAPPING` GeoTIFF tag and we read it automatically, mapping **by
+  name**. A name the taxonomy does not define is an error, not something to
+  fold into `Unclassified`. Tiles without the tag need `--classes` —
+  [`examples/smart_terrain_class_ids.json`](examples/smart_terrain_class_ids.json)
+  is the mapping as read off the sinai drop.
+- **Nodata is 0, which is also `Unclassified`'s id.** The two are not
+  distinguishable in the file. Every 0 is treated as no-data, every fraction is
+  over classified pixels only, and the report says how much was excluded. If the
+  segmenter genuinely emits `Unclassified`, that class is being thrown away and
+  the exporter needs to give nodata a value of its own.
+- **The CRS is geographic.** A 0.5 m/px export in EPSG:4326 has a transform of
+  `5e-06`; reading that as metres makes every area in the report ten orders of
+  magnitude too small.
+
+Point `-i` at a **directory** to mosaic. Regions are connected components, so
+per-tile analysis cuts every region at the seam — one wadi across four tiles
+becomes four regions with four wrong areas and four wrong neighbour lists.
+Placement comes from the affine transforms; mixed CRS or resolution raises
+rather than resampling, because resampling a *label* raster invents classes at
+every boundary. The mosaic is cropped to the bounding box of actual data, which
+drops no labelled pixel.
 
 ---
 
@@ -74,7 +109,7 @@ with one legend emitted separately instead of repeating key names per row.
 
 ## What's in the box
 
-**[`taxonomy.py`](src/segmap_digest/taxonomy.py)** — the 45 classes plus the
+**[`taxonomy.py`](src/segmap_digest/taxonomy.py)** — the 47 classes plus the
 structure hiding inside the flat list:
 
 - five overlapping sub-ontologies (artifact / anthropogenic / hydrology /
@@ -89,7 +124,7 @@ structure hiding inside the flat list:
 - **co-occurrence priors** — terra rossa forms on hard carbonate, rendzina on
   chalk and marl, nari *caps* units, a dip slope needs low aspect variance,
   badlands need relief. World knowledge the CNN never had access to.
-- a 45 → 9 **superclass** collapse for coarse reasoning and legible colourmaps.
+- a 47 → 9 **superclass** collapse for coarse reasoning and legible colourmaps.
 
 **[`index.py`](src/segmap_digest/index.py)** — Stage 0, raster → symbolic index.
 Two indices because they answer different questions:
@@ -112,7 +147,7 @@ layer. Applies the priors deterministically and emits *candidates*:
 rid   class            kind                       sev  area_m2  message
 434   HydromorpicSoil  slope-violation           0.80      247  mean slope 6.7 deg outside required 0.0-5.0
 1490  BasaltRockyTerr  isolated-speck            0.65       60  island fully enclosed by Garigue (dist 1.00)
-4     Clutter          oov-candidate             0.50       32  outside the 45-class vocabulary; detector target
+4     Clutter          oov-candidate             0.50       32  outside the 47-class vocabulary; detector target
 245   TerraRosa        missing-expected-context  0.45      351  no boundary with any hard-carbonate unit
 ```
 
@@ -187,7 +222,7 @@ These are the things that were easy to get wrong:
 - **Numbers come from code, not from the model.** Areas, counts, distances, and
   adjacency are computed here and handed over as facts.
 - **Colourised label maps are for humans.** Asking a VLM to read exact colours
-  off a 45-entry legend is a task VLMs are bad at; `loader.load()` refuses a
+  off a 47-entry legend is a task VLMs are bad at; `loader.load()` refuses a
   3-band PNG rather than guessing class ids back out of RGB.
 
 ---

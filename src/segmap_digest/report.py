@@ -106,19 +106,44 @@ def tsv_table(text: str, msg_cols=("message", "why", "notes", "top_classes",
     return "\n".join(out)
 
 
-def _legend(labels: np.ndarray) -> str:
+def _legend(raster: LabelRaster) -> str:
     hexes = colormap_hex()
-    hist = np.bincount(labels.ravel(), minlength=N_CLASSES)
+    counted = (raster.labels if raster.valid is None
+               else raster.labels[raster.valid])
+    hist = np.bincount(counted.ravel(), minlength=N_CLASSES)
+    total = max(counted.size, 1)
     parts = ['<div class="legend">']
     for c in np.argsort(-hist):
         if hist[c] == 0:
             continue
         parts.append(
             f'<span><i class="sw" style="background:{hexes[c]}"></i>'
-            f'{_esc(BY_ID[c].name)} {hist[c] / labels.size:.1%}</span>'
+            f'{_esc(BY_ID[c].name)} {hist[c] / total:.1%}</span>'
         )
     parts.append("</div>")
     return "".join(parts)
+
+
+# A 1.2 Gpx mosaic PNG is a 40000 px image nobody can open and nothing reads
+# back. The *analysis* stays at full resolution; only this picture is reduced,
+# and the caption says by how much.
+PREVIEW_MAX_PX = 4_000_000
+
+
+def _save_preview(raster: LabelRaster, path, *, labels: np.ndarray | None = None) -> int:
+    """Write a colourised PNG, decimated if huge. Returns the decimation step."""
+    from PIL import Image
+
+    arr = raster.labels if labels is None else labels
+    step = 1
+    while (arr.shape[0] // step) * (arr.shape[1] // step) > PREVIEW_MAX_PX:
+        step += 1
+    view = arr[::step, ::step]
+    rgb = colourise(view)
+    if raster.valid is not None:
+        rgb[~raster.valid[::step, ::step]] = 255      # nodata reads as blank
+    Image.fromarray(rgb).save(path)
+    return step
 
 
 def build(
@@ -141,12 +166,23 @@ def build(
     synthetic_dem = raster.dem is not None and synthetic
 
     # --- images ------------------------------------------------------------
-    Image.fromarray(colourise(raster.labels)).save(out / "img" / "labels.png")
-    products = {}
+    step = _save_preview(raster, out / "img" / "labels.png")
+    # Each product is float32 at full raster size. Keeping all four alive is
+    # 16 bytes/px, which on a mosaic is tens of GB for three arrays that are only
+    # ever reduced to a PNG and a mean. Retain the one the summary table needs.
+    product_means = {}
+    trafficability = None
     for name in ("trafficability", "concealment", "drainage", "fire_fuel"):
         arr = s4_products.compute(raster, name)
-        s4_products.to_png(arr, str(out / "img" / f"{name}.png"))
-        products[name] = arr
+        s4_products.to_png(arr[::step, ::step], str(out / "img" / f"{name}.png"))
+        # over classified pixels, matching the summary table below -- averaging
+        # in the zeroed nodata would report a different number for the same thing
+        product_means[name] = float(arr.mean() if raster.valid is None
+                                    else arr[raster.valid].mean())
+        if name == "trafficability":
+            trafficability = arr
+        else:
+            del arr
 
     S: list[str] = []
 
@@ -154,10 +190,10 @@ def build(
         S.append(f'<h2 id="{anchor}">{_esc(title)}</h2>')
 
     # --- header ------------------------------------------------------------
-    area_km2 = h * w * raster.pixel_area_m2 / 1e6
+    area_km2 = raster.n_valid * raster.pixel_area_m2 / 1e6
     S.append(f"<h1>Smart Terrain — segmentation map report</h1>")
-    S.append(f'<p class="sub">{_esc(source)} · {h}×{w} px · {raster.gsd} m/px · '
-             f'{area_km2:.3f} km² · {len(ridx.regions)} regions</p>')
+    S.append(f'<p class="sub">{_esc(source)} · {h}×{w} px · {raster.gsd:.3f} m/px · '
+             f'{area_km2:.3f} km² classified · {len(ridx.regions)} regions</p>')
     S.append('<nav>' + " ".join(
         f'<a href="#{a}">{t}</a>' for a, t in
         [("map", "map"), ("s1", "S1 audit"), ("s2", "S2 adjudicate"),
@@ -173,13 +209,25 @@ def build(
         S.append('<div class="warn">DEM is synthetic. Slope-derived numbers here '
                  'describe the fixture, not real terrain.</div>')
 
+    if raster.valid is not None:
+        S.append(f'<div class="warn">{raster.nodata_frac:.1%} of this extent is '
+                 f'nodata. The export\'s nodata value is 0, which is also the id of '
+                 f'<code>Unclassified</code> — the two are not distinguishable in the '
+                 f'file, so every 0 here is treated as no-data. If the segmenter '
+                 f'genuinely emits Unclassified, those pixels are being discarded and '
+                 f'the producer needs to give nodata its own value. All fractions '
+                 f'below are over the {raster.n_valid:,} classified pixels.</div>')
+
     # --- map ---------------------------------------------------------------
     sec("The map", "map")
+    dec = (f' Decimated {step}× for display ({h // step}×{w // step} px shown); '
+           f'all numbers below are computed at full resolution.' if step > 1 else '')
     S.append('<div class="grid"><figure><img src="img/labels.png" alt="label map">'
-             '<figcaption>Class labels, hue by superclass. For human eyes only — '
-             'recovering class ids from these colours is lossy.</figcaption>'
+             '<figcaption>Class labels, hue by superclass. White is nodata. For '
+             'human eyes only — recovering class ids from these colours is lossy.'
+             f'{_esc(dec)}</figcaption>'
              '</figure></div>')
-    S.append(_legend(raster.labels))
+    S.append(_legend(raster))
     S.append("<h3>Composition</h3>")
     S.append(tsv_table(digests.l0_histogram(raster)))
 
@@ -250,13 +298,13 @@ def build(
         "drainage": "where water pools: flatness + low ground + water-holding class",
         "fire_fuel": "fuel load: canopy plus a dryness bonus",
     }
-    for name, arr in products.items():
+    for name in product_means:
         S.append(f'<figure><img src="img/{name}.png" alt="{name}">'
                  f'<figcaption><b>{name}</b> — {caps[name]}. '
-                 f'mean {arr.mean():.2f}</figcaption></figure>')
+                 f'mean {product_means[name]:.2f}</figcaption></figure>')
     S.append("</div>")
     S.append("<h3>trafficability by superclass</h3>")
-    S.append(tsv_table(s4_products.summarise(raster, products["trafficability"])))
+    S.append(tsv_table(s4_products.summarise(raster, trafficability)))
 
     # --- S5 ----------------------------------------------------------------
     sec("S5 — queries", "s5")
@@ -279,7 +327,7 @@ def build(
                  'synthetically aged copy (season change, succession, a new '
                  'building cluster, a sealed road, and a deliberate lithology '
                  'flip). Numbers here describe the fixture.</div>')
-    Image.fromarray(colourise(t2.labels)).save(out / "img" / "labels_t2.png")
+    _save_preview(raster, out / "img" / "labels_t2.png", labels=t2.labels)
     S.append('<div class="grid">'
              '<figure><img src="img/labels.png"><figcaption>date 1</figcaption></figure>'
              '<figure><img src="img/labels_t2.png"><figcaption>date 2</figcaption></figure>'

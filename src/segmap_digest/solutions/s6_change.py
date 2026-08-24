@@ -135,7 +135,9 @@ def compare(t1: LabelRaster, t2: LabelRaster) -> ChangeReport:
     px = t1.pixel_area_m2
 
     changed = a != b
-    pairs = (a.astype(np.int32) * N_CLASSES + b.astype(np.int32))[changed]
+    # Key only the changed pixels. Widening the whole raster to int32 first cost
+    # 12 bytes/px of peak for a result that is typically well under 1% of it.
+    pairs = a[changed].astype(np.int32) * N_CLASSES + b[changed]
     uniq, counts = np.unique(pairs, return_counts=True)
 
     events: list[ChangeEvent] = []

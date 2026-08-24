@@ -35,15 +35,20 @@ def estimate_tokens(text: str) -> int:
 
 def l0_histogram(raster: LabelRaster, min_frac: float = 0.0) -> str:
     labels = raster.labels
-    hist = np.bincount(labels.ravel(), minlength=N_CLASSES)
-    total = labels.size
+    counted = labels if raster.valid is None else labels[raster.valid]
+    hist = np.bincount(counted.ravel(), minlength=N_CLASSES)
+    total = max(counted.size, 1)
     area_km2 = total * raster.pixel_area_m2 / 1e6
 
     lines = [
         f"# tile {labels.shape[0]}x{labels.shape[1]} px, gsd {raster.gsd} m, "
-        f"area {area_km2:.3f} km2",
+        f"classified area {area_km2:.3f} km2",
         "class_id\tname\tsuperclass\tfrac\tarea_m2",
     ]
+    if raster.valid is not None:
+        nod = labels.size - counted.size
+        lines.insert(1, f"# {nod} px ({raster.nodata_frac:.1%} of the extent) are "
+                        f"nodata and are excluded from every fraction below")
     for c in np.argsort(-hist):
         frac = hist[c] / total
         if hist[c] == 0 or frac < min_frac:
@@ -70,7 +75,10 @@ def l1_grid(raster: LabelRaster, n: int = 16, top_k: int = 3) -> str:
     for i in range(n):
         for j in range(n):
             sub = labels[rs[i]:rs[i + 1], cs[j]:cs[j + 1]]
+            if raster.valid is not None:
+                sub = sub[raster.valid[rs[i]:rs[i + 1], cs[j]:cs[j + 1]]]
             if sub.size == 0:
+                lines.append(f"{i},{j}\t-")       # all nodata; say so, don't skip
                 continue
             hist = np.bincount(sub.ravel(), minlength=N_CLASSES)
             order = np.argsort(-hist)[:top_k]
@@ -81,26 +89,53 @@ def l1_grid(raster: LabelRaster, n: int = 16, top_k: int = 3) -> str:
 
 # --- L1q: quadtree ---------------------------------------------------------
 
+# np.bincount promotes its input to intp, i.e. 8 bytes per pixel regardless of
+# the array's own dtype. The quadtree's root block on a mosaic is 65536^2, so a
+# single naive call there asks for 34 GB. Histogram in row bands instead: exact,
+# same answer, bounded peak.
+_HIST_CHUNK_PX = 64 << 20
+
+
+def _block_hist(sub: np.ndarray, n_bins: int) -> np.ndarray:
+    if sub.size <= _HIST_CHUNK_PX:
+        return np.bincount(sub.ravel(), minlength=n_bins)
+    rows = max(1, _HIST_CHUNK_PX // max(sub.shape[1], 1))
+    out = np.zeros(n_bins, dtype=np.int64)
+    for r in range(0, sub.shape[0], rows):
+        out += np.bincount(sub[r:r + rows].ravel(), minlength=n_bins)
+    return out
+
+
 def l1q_quadtree(raster: LabelRaster, purity: float = 0.92, min_block: int = 8) -> str:
     """Morton-ordered quadtree. Homogeneous areas collapse to one token, so a
     terrain map with large uniform regions compresses hard while keeping the
     spatial structure an LLM can actually navigate.
 
     Grammar: a leaf is a bare class id; a node is `(nw ne sw se)`.
+
+    Nodata is padding: a cropped tile's nodata is indistinguishable from being
+    outside the tile, and both collapse to `.`. Both are carried as a uint8
+    sentinel rather than a negative int16 -- the square power-of-two pad is the
+    single biggest array this module allocates, and on a rectangular mosaic it
+    is already several times the raster itself.
     """
     labels = raster.labels
+    h, w = labels.shape
+    sent = N_CLASSES
     size = 1 << int(np.ceil(np.log2(max(labels.shape))))
-    pad = np.zeros((size, size), dtype=np.int16) - 1
-    pad[:labels.shape[0], :labels.shape[1]] = labels
+    pad = np.full((size, size), sent, dtype=np.uint8)
+    pad[:h, :w] = labels
+    if raster.valid is not None:
+        pad[:h, :w][~raster.valid] = sent
 
     def rec(r0: int, c0: int, s: int) -> str:
         sub = pad[r0:r0 + s, c0:c0 + s]
-        valid = sub[sub >= 0]
-        if valid.size == 0:
+        hist = _block_hist(sub, sent + 1)
+        n_valid = int(sub.size - hist[sent])
+        if n_valid == 0:
             return "."
-        hist = np.bincount(valid.ravel(), minlength=N_CLASSES)
-        dom = int(np.argmax(hist))
-        if hist[dom] / valid.size >= purity or s <= min_block:
+        dom = int(np.argmax(hist[:sent]))
+        if hist[dom] / n_valid >= purity or s <= min_block:
             return str(dom)
         half = s // 2
         kids = [

@@ -15,18 +15,28 @@ from .taxonomy import legend as taxonomy_legend
 
 
 def _add_input_args(p: argparse.ArgumentParser) -> None:
-    p.add_argument("-i", "--input", help="label raster (.tif/.npy/.png). "
+    p.add_argument("-i", "--input", help="label raster (.tif/.npy/.png), or a "
+                                         "directory of adjacent GeoTIFFs to mosaic. "
                                          "Omit to use a synthetic tile.")
     p.add_argument("--gsd", type=float, default=None, help="metres per pixel")
+    p.add_argument("--classes", help="JSON {wire_id: class_name} mapping. Only needed "
+                                     "when the GeoTIFF has no ID_TO_LABEL_MAPPING tag.")
     p.add_argument("--size", type=int, default=1024, help="synthetic tile size")
     p.add_argument("--seed", type=int, default=7, help="synthetic tile seed")
     p.add_argument("--dem", help="elevation raster (.tif/.npy) to attach")
 
 
 def _load(args) -> loader.LabelRaster:
-    if args.input:
-        return loader.load(args.input, gsd=args.gsd, dem=getattr(args, "dem", None))
-    return synth.generate(size=args.size, gsd=args.gsd or 0.3, seed=args.seed)
+    if not args.input:
+        return synth.generate(size=args.size, gsd=args.gsd or 0.3, seed=args.seed)
+    try:
+        return loader.load(args.input, gsd=args.gsd, dem=getattr(args, "dem", None),
+                           classes=getattr(args, "classes", None))
+    except (ValueError, FileNotFoundError) as exc:
+        # An AOI whose data has not landed, a missing id mapping, mixed
+        # resolutions: all things the operator can act on. A traceback is not an
+        # answer to any of them.
+        raise SystemExit(f"segmap: cannot read {args.input}: {exc}")
 
 
 def _build_digest(level: str, raster, args) -> str:
@@ -118,7 +128,8 @@ def cmd_report(args) -> None:
     from . import report as report_mod
 
     r = _load(args)
-    second = (loader.load(args.second, gsd=args.gsd, dem=args.dem)
+    second = (loader.load(args.second, gsd=args.gsd, dem=args.dem,
+                          classes=args.classes)
               if args.second else None)
     index = report_mod.build(
         r, args.out,
@@ -189,7 +200,7 @@ def cmd_solve(args) -> None:
             raise SystemExit(f"query error: {exc}")
 
     elif args.solution == "s6":
-        t2 = (loader.load(args.second, gsd=args.gsd) if args.second
+        t2 = (loader.load(args.second, gsd=args.gsd, classes=args.classes) if args.second
               else synth.second_date(r, seed=args.seed + 92))
         print(s6_change.render(s6_change.compare(r, t2), limit=args.budget))
 

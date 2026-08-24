@@ -1,4 +1,4 @@
-"""segmap_digest -- turn a 45-class Smart Terrain segmentation raster into
+"""segmap_digest -- turn a 47-class Smart Terrain segmentation raster into
 representations an LLM can reason over.
 
 Quick start:

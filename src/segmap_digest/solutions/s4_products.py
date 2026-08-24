@@ -1,8 +1,8 @@
 """S4 -- derived decision products.
 
-This is where 45 classes become useful: a many-to-one mapping from the taxonomy
+This is where 47 classes become useful: a many-to-one mapping from the taxonomy
 plus slope plus season into the things someone actually asks for. Tedious to
-hand-code for 45 x N combinations, which is exactly why it is worth having a
+hand-code for 47 x N combinations, which is exactly why it is worth having a
 model help author the tables -- but the evaluation must stay deterministic.
 
 Products implemented (naive):
@@ -51,7 +51,7 @@ VEHICLES = {
 SLOPE_FREE_DEG = 5.0
 
 # Classes that hold water / stay wet, driving the wet penalty.
-WET_CLASSES = ("HydromorpicSoil", "ClayeyDeepSoil", "Clayeysoil", "Water",
+WET_CLASSES = ("HydromorpicSoil", "ClayeyDeepSoil", "ClayeySoil", "Water",
                "IrrigatedField", "IrrigatedOrchard")
 
 # Concealment: canopy comes from the taxonomy; these add the rest.
@@ -143,26 +143,37 @@ PRODUCTS = {
 
 
 def compute(raster: LabelRaster, product: str, **kw) -> np.ndarray:
-    return PRODUCTS[product](raster, **kw)
+    arr = PRODUCTS[product](raster, **kw)
+    if raster.valid is not None:
+        # Nodata carries class id 0 (Unclassified), whose traffic score is 0.5.
+        # Left alone, a third of an arid crop scores as moderately driveable open
+        # ground, and S5's corridor query drives straight across it.
+        arr = np.where(raster.valid, arr, 0.0).astype(np.float32)
+    return arr
 
 
 def summarise(raster: LabelRaster, arr: np.ndarray, ridx: RegionIndex | None = None,
               top_k: int = 12) -> str:
     """Per-superclass means, plus the worst/best regions if an index is given."""
+    ok = raster.valid
+    vals = arr if ok is None else arr[ok]
     lines = [
-        f"# value distribution: mean {arr.mean():.2f}, "
-        f"p10 {np.percentile(arr, 10):.2f}, p90 {np.percentile(arr, 90):.2f}",
+        f"# value distribution over classified pixels: mean {vals.mean():.2f}, "
+        f"p10 {np.percentile(vals, 10):.2f}, p90 {np.percentile(vals, 90):.2f}",
         "",
         "## mean by superclass",
         "superclass\tmean\tarea_frac",
     ]
     sc_of = np.array([SUPERCLASS_OF[c] for c in range(N_CLASSES)])
     per_px = sc_of[raster.labels]
+    denom = max(raster.n_valid, 1)
     for sc in sorted(set(SUPERCLASS_OF.values())):
         m = per_px == sc
+        if ok is not None:
+            m &= ok
         if not m.any():
             continue
-        lines.append(f"{sc}\t{arr[m].mean():.2f}\t{m.mean():.3f}")
+        lines.append(f"{sc}\t{arr[m].mean():.2f}\t{m.sum() / denom:.3f}")
 
     if ridx is not None:
         lines += ["", f"## top {top_k} regions by mean value", "rid\tclass\tarea_m2\tmean"]

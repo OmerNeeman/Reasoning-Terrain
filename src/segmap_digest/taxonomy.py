@@ -1,9 +1,15 @@
-"""The 45-class Smart Terrain taxonomy, plus the structure hiding inside it.
+"""The 47-class Smart Terrain taxonomy, plus the structure hiding inside it.
 
 The class list is flat on the wire but is really five overlapping ontologies:
 artifacts, anthropogenic objects, hydrology, pedology, a lithology x
 geomorphology grid, vegetation formations, and land use. The reasoning layer
 works over that structure, not over the flat list.
+
+The ids below are DENSE INTERNAL ids, 0..46, and they are NOT the ids the
+segmenter writes into a GeoTIFF. The real product emits sparse ids in 0..241
+(Unclassified=0, Clutter=2, ... ChalkTerrace=241) and ships that mapping as an
+`ID_TO_LABEL_MAPPING` GeoTIFF tag. `loader` translates wire ids to these dense
+ids by *name*; see `loader.class_map_from_tags`. Never assume the two agree.
 
 DEFINITIONS ARE A STARTING POINT AND NEED EXPERT REVIEW. They are the highest
 leverage artifact in the whole pipeline -- an LLM reasons over these words, not
@@ -47,7 +53,7 @@ def _c(*args, **kwargs) -> ClassDef:
 CLASSES: list[ClassDef] = [
     _c(0, "Unclassified", ARTIFACT,
        "No confident label. Either genuinely ambiguous imagery or a target outside "
-       "the 45-class vocabulary. High-value hunting ground for out-of-vocabulary detection.",
+       "the 47-class vocabulary. High-value hunting ground for out-of-vocabulary detection.",
        traffic=0.5),
     _c(1, "Clutter", ARTIFACT,
        "Man-made or anomalous material the taxonomy has no word for: greenhouses, pylons, "
@@ -104,7 +110,7 @@ CLASSES: list[ClassDef] = [
         "dolomite, nari) under Mediterranean climate, typically in karst pockets and on gentle "
         "slopes. Terra rossa surrounded by chalk or marl is a strong misclassification signal.",
         traffic=0.7),
-    _c(16, "Clayeysoil", SOIL,
+    _c(16, "ClayeySoil", SOIL,
         "Clay-rich soil, moderate depth. Shrink-swell; poor trafficability when wet.",
         traffic=0.6),
     _c(17, "Rendzina", SOIL,
@@ -154,65 +160,73 @@ CLASSES: list[ClassDef] = [
     _c(29, "LimestoneStoneyTerrain", ROCK,
         "Limestone stony ground: abundant small clasts over soil, bedrock largely covered.",
         lithology="Limestone", morphology="StoneyTerrain", traffic=0.55),
-    _c(30, "LimestoneBeddedRock", ROCK,
+    _c(30, "LimestoneHardRockLineament", ROCK,
+        "Linear hard-limestone outcrop: a resistant bed or fracture-controlled ridge expressed "
+        "as a narrow, highly elongated strip. Geometry is the label -- a compact blob of this "
+        "class contradicts its own definition.",
+        lithology="Limestone", morphology="HardRockLineament", traffic=0.2),
+    _c(31, "LimestoneBeddedRock", ROCK,
         "Exposed limestone bedding planes; visible layering, stepped micro-relief.",
         lithology="Limestone", morphology="BeddedRock", traffic=0.3),
-    _c(31, "LimestoneRockDipSlope", ROCK,
+    _c(32, "LimestoneRockDipSlope", ROCK,
         "Limestone dip slope: a coherent planar facet parallel to bedding. Requires LOW aspect "
         "variance across the polygon -- high aspect variance falsifies this label regardless of "
         "how the pixels looked.", lithology="Limestone", morphology="RockDipSlope", traffic=0.2),
-    _c(32, "LimestoneTerrace", ROCK,
+    _c(33, "LimestoneTerrace", ROCK,
         "Structural bench on limestone: near-flat step in a slope profile.",
         lithology="Limestone", morphology="Terrace", traffic=0.65),
 
     # Dolomite -- hard carbonate, spectrally near-identical to limestone in RGB.
-    _c(33, "DolomiteRockyTerrain", ROCK,
+    _c(34, "DolomiteRockyTerrain", ROCK,
         "Dolomite with extensive exposed bedrock. Effectively indistinguishable from limestone "
         "in RGB -- separation requires the geological map.",
         lithology="Dolomite", morphology="RockyTerrain", traffic=0.25),
-    _c(34, "DolomiteBoulder", ROCK,
+    _c(35, "DolomiteBoulder", ROCK,
         "Dolomite boulder field: large detached blocks, impassable.",
         lithology="Dolomite", morphology="Boulder", traffic=0.05),
-    _c(35, "DolomiteStoneyTerrain", ROCK,
+    _c(36, "DolomiteStoneyTerrain", ROCK,
         "Dolomite stony ground: abundant clasts over soil.",
         lithology="Dolomite", morphology="StoneyTerrain", traffic=0.55),
-    _c(36, "DolomiteTerrace", ROCK,
+    _c(37, "DolomiteTerrace", ROCK,
         "Structural bench developed on dolomite.",
         lithology="Dolomite", morphology="Terrace", traffic=0.65),
 
     # Nari -- calcrete crust. Caps other units; occurs as thin plateau-edge bands.
-    _c(37, "NariRockyTerrain", ROCK,
+    _c(38, "NariRockyTerrain", ROCK,
         "Nari (calcrete crust) with exposed rock. Nari CAPS other units -- expect thin bands at "
         "plateau edges and slope crests, not large valley-floor blobs.",
         lithology="Nari", morphology="RockyTerrain", traffic=0.3),
-    _c(38, "NariStoneyTerrain", ROCK,
+    _c(39, "NariStoneyTerrain", ROCK,
         "Nari stony ground: calcrete fragments over soil.",
         lithology="Nari", morphology="StoneyTerrain", traffic=0.6),
-    _c(39, "NariRockDipSlope", ROCK,
+    _c(40, "NariRockDipSlope", ROCK,
         "Nari dip slope: planar calcrete facet. Same low-aspect-variance requirement as any "
         "dip slope.", lithology="Nari", morphology="RockDipSlope", traffic=0.25),
-    _c(40, "NariTerrace", ROCK,
+    _c(41, "NariTerrace", ROCK,
         "Structural bench capped by nari crust.",
         lithology="Nari", morphology="Terrace", traffic=0.65),
 
-    _c(41, "BasaltRockyTerrain", ROCK,
+    _c(42, "BasaltRockyTerrain", ROCK,
         "Basalt with exposed rock. Dark-toned; volcanic terrain, spatially disjoint from the "
         "carbonate units.", lithology="Basalt", morphology="RockyTerrain", traffic=0.2),
-    _c(42, "BasaltBoulder", ROCK,
+    _c(43, "BasaltBoulder", ROCK,
         "Basalt boulder field. Impassable.",
         lithology="Basalt", morphology="Boulder", traffic=0.05),
-    _c(43, "BasaltStoneyTerrain", ROCK,
+    _c(44, "BasaltStoneyTerrain", ROCK,
         "Basalt stony ground: basalt clasts over soil.",
         lithology="Basalt", morphology="StoneyTerrain", traffic=0.5),
 
-    _c(44, "ChalkSmoothRockSlopes", ROCK,
-        "Chalk smooth slopes: soft white carbonate, low surface roughness. Chalk appears in the "
-        "taxonomy ONLY in this morphology -- it does not form boulder fields or dip slopes. "
+    _c(45, "ChalkSmoothRockSlopes", ROCK,
+        "Chalk smooth slopes: soft white carbonate, low surface roughness. Chalk forms no "
+        "boulder field, no dip slope and no rocky terrain -- only smooth slopes and terraces. "
         "Strongly associated with Rendzina soil.",
         lithology="Chalk", morphology="SmoothRockSlopes", traffic=0.4),
+    _c(46, "ChalkTerrace", ROCK,
+        "Structural bench developed on chalk: near-flat step interrupting a smooth chalk slope.",
+        lithology="Chalk", morphology="Terrace", traffic=0.6),
 ]
 
-assert len(CLASSES) == 45, f"expected 45 classes, got {len(CLASSES)}"
+assert len(CLASSES) == 47, f"expected 47 classes, got {len(CLASSES)}"
 
 BY_ID: dict[int, ClassDef] = {c.id: c for c in CLASSES}
 BY_NAME: dict[str, ClassDef] = {c.name: c for c in CLASSES}
@@ -225,7 +239,7 @@ def cid(name: str) -> int:
 
 
 # --- the lithology x geomorphology grid ------------------------------------
-# Sparse and asymmetric on purpose: chalk has one morphology, limestone six.
+# Sparse and asymmetric on purpose: chalk has two morphologies, limestone seven.
 # Any predicted combination outside this grid is a definitional error, not a
 # judgement call.
 
@@ -238,7 +252,7 @@ HARD_CARBONATE = ("Limestone", "Dolomite", "Nari")
 SOFT_CARBONATE = ("Chalk", "Marl")
 
 
-# --- superclasses (collapse 45 -> 9 for coarse reasoning and legible maps) --
+# --- superclasses (collapse 47 -> 9 for coarse reasoning and legible maps) --
 
 SUPERCLASS: dict[str, tuple[str, ...]] = {
     "artifact": ("Unclassified", "Clutter", "Shadow"),
@@ -246,7 +260,7 @@ SUPERCLASS: dict[str, tuple[str, ...]] = {
     "road": ("PavedRoad", "DirtRoad", "DirtRoadB"),
     "vehicle": ("Car",),
     "water": ("Water",),
-    "soil": ("TerraRosa", "Clayeysoil", "Rendzina", "HydromorpicSoil", "ClayeyDeepSoil"),
+    "soil": ("TerraRosa", "ClayeySoil", "Rendzina", "HydromorpicSoil", "ClayeyDeepSoil"),
     "agriculture": ("UnirrigatedOrchard", "IrrigatedOrchard", "IrrigatedField"),
     "vegetation": ("GreenGrassland", "DryGrassland", "Batha", "Garigue", "Maquis"),
     "rock": tuple(c.name for c in CLASSES if c.group == ROCK),
@@ -318,11 +332,12 @@ PRIORS: tuple[Prior, ...] = (
            "DolomiteStoneyTerrain", "NariStoneyTerrain"),
           "Terra rossa is a residual decalcification clay of hard carbonate."),
     Prior("TerraRosa", "contradicts",
-          ("ChalkSmoothRockSlopes", "MaralBadlands", "MaralSmoothRockSlopes",
-           "BasaltRockyTerrain"),
+          ("ChalkSmoothRockSlopes", "ChalkTerrace", "MaralBadlands",
+           "MaralSmoothRockSlopes", "BasaltRockyTerrain"),
           "Terra rossa does not form on soft carbonate or on basalt."),
     Prior("Rendzina", "expects",
-          ("ChalkSmoothRockSlopes", "MaralSmoothRockSlopes", "MaralTerrace"),
+          ("ChalkSmoothRockSlopes", "ChalkTerrace", "MaralSmoothRockSlopes",
+           "MaralTerrace"),
           "Rendzina is the shallow calcareous soil of chalk and marl."),
     Prior("Rendzina", "contradicts",
           ("BasaltRockyTerrain", "BasaltStoneyTerrain", "BasaltBoulder"),

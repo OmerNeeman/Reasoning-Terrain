@@ -11,19 +11,24 @@ def tile():
 
 
 def test_taxonomy_shape():
-    assert taxonomy.N_CLASSES == 45
-    assert len({c.name for c in taxonomy.CLASSES}) == 45
-    assert len({c.id for c in taxonomy.CLASSES}) == 45
+    # 47, not 45: the real export's ID_TO_LABEL_MAPPING carries
+    # LimestoneHardRockLineament and ChalkTerrace, which the first draft of this
+    # taxonomy omitted. Asserted against N_CLASSES rather than repeating a
+    # literal, so dense ids stay dense whatever the count becomes.
+    n = taxonomy.N_CLASSES
+    assert n == 47
+    assert len({c.name for c in taxonomy.CLASSES}) == n
+    assert [c.id for c in taxonomy.CLASSES] == list(range(n))
     # every class has exactly one superclass
-    assert len(taxonomy.SUPERCLASS_OF) == 45
+    assert len(taxonomy.SUPERCLASS_OF) == n
 
 
 def test_lithology_grid_is_asymmetric():
-    """The grid is sparse on purpose: chalk has one morphology, limestone six.
+    """The grid is sparse on purpose: chalk has two morphologies, limestone seven.
     A symmetric grid would mean the taxonomy had been flattened by mistake."""
     grid = taxonomy.LITHOLOGY_GRID
-    assert set(grid["Chalk"]) == {"SmoothRockSlopes"}
-    assert len(grid["Limestone"]) == 6
+    assert set(grid["Chalk"]) == {"SmoothRockSlopes", "Terrace"}
+    assert len(grid["Limestone"]) == 7
     assert len(grid["Basalt"]) == 3
     assert len({len(v) for v in grid.values()}) > 1
 
@@ -69,7 +74,7 @@ def test_chip_fractions_sum_to_one(tile):
     cidx = build_chips(tile, size=128)
     assert cidx.chips
     for ch in cidx.chips:
-        assert ch.class_frac.shape == (45,)
+        assert ch.class_frac.shape == (taxonomy.N_CLASSES,)
         assert abs(ch.class_frac.sum() - 1.0) < 1e-9
         assert ch.entropy >= 0
 
@@ -89,7 +94,7 @@ def test_quadtree_roundtrip_is_parseable(tile):
     body = text.split("\n", 1)[1]
     assert body.count("(") == body.count(")")
     for tok in body.replace("(", " ").replace(")", " ").split():
-        assert tok == "." or 0 <= int(tok) < 45
+        assert tok == "." or 0 <= int(tok) < taxonomy.N_CLASSES
 
 
 def test_limit_is_reported_not_silent(tile):
@@ -108,7 +113,7 @@ def test_audit_returns_candidates(tile):
 def test_loader_rejects_out_of_range(tmp_path):
     bad = tmp_path / "bad.npy"
     np.save(bad, np.full((8, 8), 99, dtype=np.uint8))
-    with pytest.raises(ValueError, match="0..44"):
+    with pytest.raises(ValueError, match=f"0..{taxonomy.N_CLASSES - 1}"):
         loader.load(bad)
 
 
