@@ -6,3 +6,6 @@ build/
 dist/
 .venv/
 examples/*.dem.npy
+data/incoming/*
+!data/incoming/README.md
+out/

@@ -20,11 +20,12 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--gsd", type=float, default=None, help="metres per pixel")
     p.add_argument("--size", type=int, default=1024, help="synthetic tile size")
     p.add_argument("--seed", type=int, default=7, help="synthetic tile seed")
+    p.add_argument("--dem", help="elevation raster (.tif/.npy) to attach")
 
 
 def _load(args) -> loader.LabelRaster:
     if args.input:
-        return loader.load(args.input, gsd=args.gsd)
+        return loader.load(args.input, gsd=args.gsd, dem=getattr(args, "dem", None))
     return synth.generate(size=args.size, gsd=args.gsd or 0.3, seed=args.seed)
 
 
@@ -111,6 +112,21 @@ def cmd_audit(args) -> None:
     print(f"# {len(ridx.regions)} regions; {audit_mod.summary(findings)}",
           file=sys.stderr)
     print(audit_mod.to_tsv(findings, limit=args.limit))
+
+
+def cmd_report(args) -> None:
+    from . import report as report_mod
+
+    r = _load(args)
+    second = (loader.load(args.second, gsd=args.gsd, dem=args.dem)
+              if args.second else None)
+    index = report_mod.build(
+        r, args.out,
+        source=args.input or f"synthetic fixture (seed {args.seed})",
+        second=second, chip_px=args.chip, limit=args.limit,
+        synthetic=not args.input,
+    )
+    print(f"wrote {index}\nopen it with:  xdg-open {index}")
 
 
 def cmd_solve(args) -> None:
@@ -244,6 +260,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--min-area", type=float, default=25.0)
     p.add_argument("--limit", type=int, default=None)
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("report", help="run the whole pipeline and write an HTML page")
+    _add_input_args(p)
+    p.add_argument("-o", "--out", default="out", help="output directory")
+    p.add_argument("--second", help="second-date label raster, for S6")
+    p.add_argument("--chip", type=int, default=128)
+    p.add_argument("--limit", type=int, default=25, help="rows per table")
+    p.set_defaults(func=cmd_report)
 
     p = sub.add_parser("solve", help="run one of the six map-consuming solutions")
     _add_input_args(p)

@@ -229,3 +229,32 @@ def test_s6_rejects_mismatched_grids(tile):
     other = synth.generate(size=128, seed=1)
     with pytest.raises(ValueError, match="grids differ"):
         s6_change.compare(tile, other)
+
+
+# --- report ----------------------------------------------------------------
+
+def test_report_builds_and_flags_synthetic_dem(tmp_path, tile):
+    from segmap_digest import report
+
+    index = report.build(tile, tmp_path / "out", source="fixture", synthetic=True)
+    text = index.read_text()
+    assert index.exists() and (tmp_path / "out" / "img" / "labels.png").exists()
+    for anchor in ("map", "s1", "s2", "s3", "s4", "s5", "s6", "cost"):
+        assert f'id="{anchor}"' in text
+    assert "DEM is synthetic" in text, "must not present fixture slope as real"
+    assert "no detector" in text, "S3 reframe must be visible in the output"
+
+
+def test_report_flags_missing_dem(tmp_path):
+    from segmap_digest import report
+
+    flat = synth.generate(size=192, seed=8, with_dem=False)
+    text = report.build(flat, tmp_path / "o2", synthetic=True).read_text()
+    assert "No DEM supplied" in text
+
+
+def test_tsv_table_escapes_html():
+    from segmap_digest.report import tsv_table
+
+    out = tsv_table("a\tb\n<script>\t&x")
+    assert "<script>" not in out and "&lt;script&gt;" in out

@@ -32,7 +32,38 @@ class LabelRaster:
         return self.gsd * self.gsd
 
 
-def load(path: str | Path, gsd: float | None = None) -> LabelRaster:
+def load(path: str | Path, gsd: float | None = None,
+         dem: str | Path | None = None) -> LabelRaster:
+    raster = _load_labels(path, gsd)
+    if dem is not None:
+        raster.dem = load_dem(dem, raster.shape)
+    return raster
+
+
+def load_dem(path: str | Path, shape: tuple[int, int]) -> np.ndarray:
+    """Elevation in metres, resampled to the label grid if needed.
+
+    Nearest-neighbour resampling is fine for a POC but will quantise slope on a
+    coarse DEM -- if the DEM is much coarser than the labels, say so rather than
+    trusting the slope numbers.
+    """
+    path = Path(path)
+    if path.suffix.lower() in (".tif", ".tiff"):
+        import rasterio
+
+        with rasterio.open(path) as src:
+            arr = src.read(1).astype(np.float32)
+    else:
+        arr = np.load(path).astype(np.float32)
+
+    if arr.shape != shape:
+        ry = (np.arange(shape[0]) * arr.shape[0] / shape[0]).astype(int)
+        rx = (np.arange(shape[1]) * arr.shape[1] / shape[1]).astype(int)
+        arr = arr[np.clip(ry, 0, arr.shape[0] - 1)][:, np.clip(rx, 0, arr.shape[1] - 1)]
+    return arr
+
+
+def _load_labels(path: str | Path, gsd: float | None = None) -> LabelRaster:
     path = Path(path)
     suffix = path.suffix.lower()
 
@@ -108,6 +139,10 @@ def colormap() -> np.ndarray:
         r, g, b = colorsys.hls_to_rgb(hue, light, sat)
         out[c] = (int(r * 255), int(g * 255), int(b * 255))
     return out
+
+
+def colormap_hex() -> list[str]:
+    return ["#%02x%02x%02x" % tuple(int(v) for v in row) for row in colormap()]
 
 
 def colourise(labels: np.ndarray) -> np.ndarray:
