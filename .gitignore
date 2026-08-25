@@ -9,3 +9,4 @@ examples/*.dem.npy
 data/incoming/*
 !data/incoming/README.md
 out/
+.segmap_cache/

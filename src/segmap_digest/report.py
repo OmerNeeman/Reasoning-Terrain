@@ -155,14 +155,19 @@ def build(
     chip_px: int = 128,
     limit: int = 25,
     synthetic: bool = True,
+    ridx=None,
+    cidx=None,
 ) -> Path:
     out = Path(outdir)
     (out / "img").mkdir(parents=True, exist_ok=True)
     from PIL import Image
 
     h, w = raster.shape
-    ridx = build_regions(raster)
-    cidx = build_chips(raster, size=chip_px)
+    # Use the caller's indices when it has them -- the CLI hands over cached ones
+    # so a second report on the same AOI does not rebuild. Same defaults as
+    # before when it does not.
+    ridx = build_regions(raster) if ridx is None else ridx
+    cidx = build_chips(raster, size=chip_px) if cidx is None else cidx
     synthetic_dem = raster.dem is not None and synthetic
 
     # --- images ------------------------------------------------------------
@@ -199,6 +204,9 @@ def build(
         [("map", "map"), ("s1", "S1 audit"), ("s2", "S2 adjudicate"),
          ("s3", "S3 attention"), ("s4", "S4 products"), ("s5", "S5 query"),
          ("s6", "S6 change"), ("cost", "digest cost")]) + '</nav>')
+
+    if raster.subset_note:
+        S.append(f'<div class="warn">{_esc(raster.subset_note)}</div>')
 
     if raster.dem is None:
         S.append('<div class="warn">No DEM supplied. Slope and aspect are zero, '

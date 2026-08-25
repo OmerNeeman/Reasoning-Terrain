@@ -36,6 +36,11 @@ class LabelRaster:
     crs: object | None = None
     dem: np.ndarray | None = None     # (H, W) float32 elevation, metres
     valid: np.ndarray | None = None   # (H, W) bool; None = every pixel is data
+    # Non-empty only when this raster is a *window* onto a larger AOI (see
+    # `crop_to_max_mpx`). It says so in words, and everything that renders an
+    # answer is expected to repeat it: a subset answer presented as an AOI answer
+    # is a wrong answer.
+    subset_note: str = ""
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -68,6 +73,81 @@ def load(path: str | Path, gsd: float | None = None,
     if dem is not None:
         raster.dem = load_dem(dem, raster.shape)
     return raster
+
+
+# --- honest subsetting ------------------------------------------------------
+#
+# The mosaic is 1.2 Gpx and its index costs half an hour. Someone who wants to
+# poke at the thing for ten minutes needs a smaller unit of work, and there are
+# exactly two ways to make one:
+#
+#   crop   -- fewer pixels, all of them real, covering part of the AOI.
+#   stride -- the whole AOI, at a coarser grid.
+#
+# This crops. Striding a *label* raster is nearest-neighbour downsampling: it
+# deletes every feature narrower than the stride (roads, wadis, walls are 1-4 px
+# here), merges regions that never touched, and changes every area and region
+# count by an amount nobody can predict. A crop changes exactly one thing --
+# which ground you are looking at -- and says so.
+
+def crop_to_max_mpx(raster: LabelRaster, max_mpx: float) -> LabelRaster:
+    """A centred window of at most `max_mpx` megapixels, at full resolution.
+
+    Returns the raster unchanged when it already fits. The returned raster
+    carries a `subset_note` stating the window, its share of the extent, and its
+    share of the AOI's *classified* pixels -- which is the number that matters,
+    and which a centre crop of a sparse mosaic can easily make small.
+    """
+    if max_mpx is None or max_mpx <= 0:
+        raise ValueError("--max-mpx needs a positive number of megapixels")
+    h, w = raster.shape
+    total = h * w
+    budget = int(max_mpx * 1e6)
+    if total <= budget:
+        return raster
+
+    scale = (budget / total) ** 0.5
+    nh, nw = max(int(h * scale), 1), max(int(w * scale), 1)
+    r0, c0 = (h - nh) // 2, (w - nw) // 2
+    r1, c1 = r0 + nh, c0 + nw
+
+    valid = raster.valid[r0:r1, c0:c1] if raster.valid is not None else None
+    kept_valid = int(valid.sum()) if valid is not None else nh * nw
+    aoi_valid = raster.n_valid
+
+    transform = raster.transform
+    if transform is not None:
+        try:
+            from rasterio.transform import Affine
+
+            transform = transform * Affine.translation(c0, r0)
+        except ImportError:  # pragma: no cover - georeference is provenance only
+            transform = None
+
+    note = (
+        f"SUBSET: --max-mpx {max_mpx:g} cropped this AOI to rows {r0}:{r1}, "
+        f"cols {c0}:{c1} -- {nh}x{nw} px = {nh * nw / 1e6:.1f} Mpx of "
+        f"{total / 1e6:.1f} Mpx ({nh * nw / total:.1%} of the extent), holding "
+        f"{kept_valid / max(aoi_valid, 1):.1%} of the AOI's classified pixels. "
+        f"Full resolution, no downsampling. Every number derived from this "
+        f"raster describes that window only and must not be reported as an "
+        f"AOI-wide figure."
+    )
+    return LabelRaster(
+        labels=np.ascontiguousarray(raster.labels[r0:r1, c0:c1]),
+        gsd=raster.gsd,
+        transform=transform,
+        crs=raster.crs,
+        dem=(np.ascontiguousarray(raster.dem[r0:r1, c0:c1])
+             if raster.dem is not None else None),
+        valid=np.ascontiguousarray(valid) if valid is not None else None,
+        subset_note=note,
+    )
+
+
+def crop_spec(max_mpx: float | None) -> dict | None:
+    """The subset as it appears in a cache key. Same crop -> same entry."""
+    return None if not max_mpx else {"kind": "centre-crop", "max_mpx": float(max_mpx)}
 
 
 def load_dem(path: str | Path, shape: tuple[int, int]) -> np.ndarray:

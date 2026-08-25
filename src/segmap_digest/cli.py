@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 
 from . import audit as audit_mod
+from . import cache as cache_mod
 from . import digests, loader, synth
-from .index import build_chips, build_regions
 from .taxonomy import legend as taxonomy_legend
 
 
@@ -24,19 +24,107 @@ def _add_input_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--size", type=int, default=1024, help="synthetic tile size")
     p.add_argument("--seed", type=int, default=7, help="synthetic tile seed")
     p.add_argument("--dem", help="elevation raster (.tif/.npy) to attach")
+    p.add_argument("--max-mpx", type=float, default=None,
+                   help="crop to a centred window of at most N megapixels, at full "
+                        "resolution, and say so. For poking at an AOI whose full "
+                        "index is too expensive to wait for.")
+    _add_cache_args(p)
+
+
+def _add_cache_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--cache", default=str(cache_mod.DEFAULT_CACHE_DIR),
+                   help=f"index cache directory "
+                        f"(default {cache_mod.DEFAULT_CACHE_DIR}; $SEGMAP_CACHE)")
+    p.add_argument("--no-cache", action="store_true",
+                   help="always rebuild, never read or write the cache")
+    p.add_argument("--refresh-index", action="store_true",
+                   help="rebuild and overwrite the cached index")
 
 
 def _load(args) -> loader.LabelRaster:
     if not args.input:
         return synth.generate(size=args.size, gsd=args.gsd or 0.3, seed=args.seed)
     try:
-        return loader.load(args.input, gsd=args.gsd, dem=getattr(args, "dem", None),
-                           classes=getattr(args, "classes", None))
+        if Path(args.input).is_dir():
+            # Stitching twenty tiles is 19 s; once the indices are cached that is
+            # the whole cost of a question, so the mosaic is memoised too.
+            r = cache_mod.mosaic_raster(
+                args.input, gsd=args.gsd, dem=getattr(args, "dem", None),
+                classes=getattr(args, "classes", None),
+                source=_cache_source(args, mosaic=True), cache_dir=_cache_dir(args),
+                refresh=getattr(args, "refresh_index", False),
+            )
+        else:
+            r = loader.load(args.input, gsd=args.gsd, dem=getattr(args, "dem", None),
+                            classes=getattr(args, "classes", None))
     except (ValueError, FileNotFoundError) as exc:
         # An AOI whose data has not landed, a missing id mapping, mixed
         # resolutions: all things the operator can act on. A traceback is not an
         # answer to any of them.
         raise SystemExit(f"segmap: cannot read {args.input}: {exc}")
+
+    h, w = r.shape
+    print(f"# input: {args.input} -> {h}x{w} px @ {r.gsd:.3f} m/px, "
+          f"{h * w / 1e6:.1f} Mpx, {1 - r.nodata_frac:.1%} classified",
+          file=sys.stderr)
+    if getattr(args, "max_mpx", None):
+        r = loader.crop_to_max_mpx(r, args.max_mpx)
+        if r.subset_note:
+            print(f"# {r.subset_note}", file=sys.stderr)
+    return r
+
+
+# --- index cache ------------------------------------------------------------
+#
+# Every command that needs an index goes through these two, so a build is paid
+# for once per AOI rather than once per question. `--no-cache` and the synthetic
+# fixture both route straight to the builders.
+
+def _cache_source(args, mosaic: bool = False) -> dict | None:
+    """The input fingerprint for a cache key.
+
+    `mosaic=True` drops the DEM and the crop window: the stitched label arrays
+    are the same object whatever `--dem` and `--max-mpx` say, and keying on them
+    would store the same 2.4 GB twice.
+    """
+    if getattr(args, "no_cache", False) or not getattr(args, "input", None):
+        return None
+    try:
+        return cache_mod.source_fingerprint(
+            args.input, gsd=args.gsd,
+            dem=None if mosaic else getattr(args, "dem", None),
+            classes=getattr(args, "classes", None),
+            subset=(None if mosaic
+                    else loader.crop_spec(getattr(args, "max_mpx", None))),
+        )
+    except (OSError, ValueError):
+        # Un-stattable input is the loader's problem to report, not a reason to
+        # fail here. Fall back to building without a cache.
+        return None
+
+
+def _cache_dir(args):
+    c = getattr(args, "cache", None)
+    return Path(c) if c else cache_mod.DEFAULT_CACHE_DIR
+
+
+def _regions(raster, args):
+    return cache_mod.get(
+        "regions", raster, source=_cache_source(args),
+        params=cache_mod.region_params(getattr(args, "min_px", 12)),
+        cache_dir=_cache_dir(args),
+        refresh=getattr(args, "refresh_index", False),
+    )
+
+
+def _chips(raster, args, size: int | None = None):
+    return cache_mod.get(
+        "chips", raster, source=_cache_source(args),
+        params=cache_mod.chip_params(size if size is not None
+                                     else getattr(args, "chip", 256)),
+        cache_dir=_cache_dir(args),
+        refresh=getattr(args, "refresh_index", False),
+    )
 
 
 def _build_digest(level: str, raster, args) -> str:
@@ -47,15 +135,15 @@ def _build_digest(level: str, raster, args) -> str:
     if level == "l1q":
         return digests.l1q_quadtree(raster, purity=getattr(args, "purity", 0.92))
     if level == "l2":
-        ridx = build_regions(raster, min_area_px=getattr(args, "min_px", 12))
-        return digests.l2_regions(ridx, min_area_m2=getattr(args, "min_area", 0.0),
+        return digests.l2_regions(_regions(raster, args),
+                                  min_area_m2=getattr(args, "min_area", 0.0),
                                   limit=getattr(args, "limit", None))
     if level == "l3":
-        ridx = build_regions(raster, min_area_px=getattr(args, "min_px", 12))
-        return digests.l3_adjacency(ridx, min_area_m2=getattr(args, "min_area", 0.0))
+        return digests.l3_adjacency(_regions(raster, args),
+                                    min_area_m2=getattr(args, "min_area", 0.0))
     if level == "chips":
-        cidx = build_chips(raster, size=getattr(args, "chip", 256))
-        return digests.chip_table(cidx, limit=getattr(args, "limit", None))
+        return digests.chip_table(_chips(raster, args),
+                                  limit=getattr(args, "limit", None))
     raise SystemExit(f"unknown level: {level}")
 
 
@@ -117,7 +205,7 @@ def cmd_compare(args) -> None:
 
 def cmd_audit(args) -> None:
     r = _load(args)
-    ridx = build_regions(r, min_area_px=args.min_px)
+    ridx = _regions(r, args)
     findings = audit_mod.audit(ridx, min_area_m2=args.min_area)
     print(f"# {len(ridx.regions)} regions; {audit_mod.summary(findings)}",
           file=sys.stderr)
@@ -136,8 +224,40 @@ def cmd_report(args) -> None:
         source=args.input or f"synthetic fixture (seed {args.seed})",
         second=second, chip_px=args.chip, limit=args.limit,
         synthetic=not args.input,
+        ridx=_regions(r, args), cidx=_chips(r, args, size=args.chip),
     )
     print(f"wrote {index}\nopen it with:  xdg-open {index}")
+
+
+def cmd_index(args) -> None:
+    """Build the indices and stop. The point of the whole cache: pay the build
+    once, deliberately, instead of by accident inside every question."""
+    if args.list:
+        rows = cache_mod.entries(args.out)
+        if not rows:
+            print(f"no cached indices in {args.out}")
+            return
+        print(f"{'kind':8} {'built':>12} {'build_s':>9} {'size_mb':>9}  source")
+        for m in rows:
+            src = m.get("source", {})
+            files = src.get("files") or []
+            where = (Path(files[0][0]).parent if len(files) > 1
+                     else (files[0][0] if files else src.get("synthetic", "?")))
+            print(f"{m['kind']:8} {cache_mod.describe_age(m):>12} "
+                  f"{m.get('build_seconds', 0):>9.0f} {m['bytes'] / 1e6:>9.1f}  "
+                  f"{where}{'  [SUBSET]' if src.get('subset') else ''}")
+        return
+
+    if not args.input:
+        raise SystemExit("segmap index needs -i <tile.tif|directory>; there is "
+                         "nothing to cache about the synthetic fixture, which "
+                         "builds in under a second")
+    args.cache = args.out
+    r = _load(args)
+    ridx = _regions(r, args)
+    cidx = _chips(r, args)
+    print(f"indexed {args.input}: {len(ridx.regions)} regions, "
+          f"{len(cidx.chips)} chips of {args.chip} px -> {args.out}")
 
 
 def cmd_solve(args) -> None:
@@ -146,12 +266,12 @@ def cmd_solve(args) -> None:
     r = _load(args)
 
     if args.solution == "s1":
-        ridx = build_regions(r, min_area_px=args.min_px)
+        ridx = _regions(r, args)
         print(s1_audit.render(s1_audit.run(ridx, min_area_m2=args.min_area),
                               budget=args.budget))
 
     elif args.solution == "s2":
-        ridx = build_regions(r, min_area_px=args.min_px)
+        ridx = _regions(r, args)
         if args.region:
             print(s2_adjudicate.render(s2_adjudicate.adjudicate(ridx, args.region)))
             return
@@ -171,7 +291,7 @@ def cmd_solve(args) -> None:
         print(s2_adjudicate.ledger(adjs))
 
     elif args.solution == "s3":
-        cidx = build_chips(r, size=args.chip)
+        cidx = _chips(r, args)
         policy, sel = s3_triage.run(cidx, args.policy, budget_frac=args.budget_frac)
         print(s3_triage.render(sel, policy))
         if args.save_policy:
@@ -181,7 +301,7 @@ def cmd_solve(args) -> None:
     elif args.solution == "s4":
         kw = {"vehicle": args.vehicle, "wet": args.wet} if args.product == "trafficability" else {}
         arr = s4_products.compute(r, args.product, **kw)
-        ridx = build_regions(r, min_area_px=args.min_px) if args.regions else None
+        ridx = _regions(r, args) if args.regions else None
         title = args.product + (f" ({args.vehicle}{', wet' if args.wet else ''})"
                                 if args.product == "trafficability" else "")
         print(f"# S4 product: {title}")
@@ -191,7 +311,7 @@ def cmd_solve(args) -> None:
             print(f"\n# wrote {args.out}", file=sys.stderr)
 
     elif args.solution == "s5":
-        ridx = build_regions(r, min_area_px=args.min_px)
+        ridx = _regions(r, args)
         if not args.query:
             raise SystemExit("s5 needs a query, e.g. --query 'corridor PavedRoad'")
         try:
@@ -219,15 +339,19 @@ def cmd_ask(args) -> None:
     from . import ask as ask_mod
 
     r = _load(args)
+    # A crop is part of the question, not a detail of how it was run: the model
+    # has to know it is looking at a window or it will answer about the AOI.
+    question = (f"{r.subset_note}\n\n{args.question}" if r.subset_note
+                else args.question)
 
     if not args.digest:
         # Default: the model plans, the code computes. Nothing in the answer is
         # estimated from a table.
-        ridx = build_regions(r, min_area_px=args.min_px)
+        ridx = _regions(r, args)
         print(f"# {len(ridx.regions)} regions indexed; answering with tool calls",
               file=sys.stderr)
         answer = ask_mod.ask_tools(
-            args.question, r, ridx,
+            question, r, ridx,
             legend=taxonomy_legend(compact=False),
             model=args.model, effort=args.effort, show_thinking=args.thinking,
         )
@@ -240,13 +364,13 @@ def cmd_ask(args) -> None:
 
     text = _build_digest(args.level, r, args)
     if args.with_audit:
-        ridx = build_regions(r, min_area_px=args.min_px)
+        ridx = _regions(r, args)
         text += "\n\n" + audit_mod.to_tsv(audit_mod.audit(ridx), limit=60)
     print(f"# digest: {args.level}, ~{digests.estimate_tokens(text)} tokens "
           f"(interpretive path -- numbers in the answer are the model's reading "
           f"of a table, not computed)", file=sys.stderr)
     print(ask_mod.ask(
-        text, args.question,
+        text, question,
         legend=taxonomy_legend(compact=False),
         model=args.model, effort=args.effort, show_thinking=args.thinking,
     ))
@@ -301,6 +425,16 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--min-area", type=float, default=25.0)
     p.add_argument("--limit", type=int, default=None)
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("index", help="build the region + chip index once and cache "
+                                     "it, so every later command loads in seconds")
+    _add_input_args(p)
+    p.add_argument("-o", "--out", default=str(cache_mod.DEFAULT_CACHE_DIR),
+                   help="cache directory")
+    p.add_argument("--min-px", type=int, default=12, help="drop regions below N px")
+    p.add_argument("--chip", type=int, default=256, help="chip size in px")
+    p.add_argument("--list", action="store_true", help="list cached indices and exit")
+    p.set_defaults(func=cmd_index)
 
     p = sub.add_parser("report", help="run the whole pipeline and write an HTML page")
     _add_input_args(p)

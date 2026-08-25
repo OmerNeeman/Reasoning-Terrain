@@ -67,6 +67,38 @@ when it is about specific places.
 """
 
 
+def client():
+    """An Anthropic client, or an actionable exit.
+
+    The SDK raises a bare `TypeError` with a paragraph of header prose when no
+    credentials are configured. Someone ten minutes into this repo reads that as
+    a bug in the repo, and the two offline paths that would have answered their
+    question go undiscovered.
+    """
+    try:
+        import anthropic
+    except ImportError as exc:  # pragma: no cover - exercised by test, not by CI
+        raise SystemExit(
+            "`segmap ask` needs the Anthropic SDK: pip install -e '.[llm]' "
+            "(and export ANTHROPIC_API_KEY). The tool layer itself runs offline: "
+            "`segmap tools` prints the definitions and `segmap solve s5 --query` "
+            "runs the verbs."
+        ) from exc
+    c = anthropic.Anthropic()
+    # Construction succeeds without credentials; the failure surfaces mid-request
+    # as a TypeError about HTTP headers. Check here instead, before anything has
+    # been built or billed.
+    if not any(getattr(c, a, None) for a in ("api_key", "auth_token", "credentials")):
+        raise SystemExit(
+            "`segmap ask` found no API credentials: export ANTHROPIC_API_KEY and "
+            "try again. Everything except the model call runs offline -- "
+            "`segmap solve s5 --query '...'` computes the same numbers, "
+            "`segmap tools` prints the surface the model is given, and "
+            "`segmap report` writes the whole page."
+        )
+    return c
+
+
 def build_system(legend: str, priors: str, extra: str = "") -> list[dict]:
     """One cached block. Everything in it is stable across questions about the
     same tile, which is the whole point of the breakpoint."""
@@ -104,20 +136,13 @@ def ask(
     max_tokens: int = 16000,
     show_thinking: bool = False,
 ) -> str:
-    try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover
-        raise SystemExit(
-            "the `ask` command needs the Anthropic SDK: pip install 'anthropic'"
-        ) from exc
-
-    client = anthropic.Anthropic()
+    api = client()
 
     thinking: dict = {"type": "adaptive"}
     if show_thinking:
         thinking["display"] = "summarized"
 
-    with client.messages.stream(
+    with api.messages.stream(
         model=model,
         max_tokens=max_tokens,
         thinking=thinking,
@@ -218,24 +243,14 @@ def ask_tools(
     """
     from . import tools
 
-    try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover - exercised by test, not by CI
-        raise SystemExit(
-            "`segmap ask` needs the Anthropic SDK: pip install -e '.[llm]' "
-            "(and export ANTHROPIC_API_KEY). The tool layer itself runs offline: "
-            "`segmap tools` prints the definitions and `segmap solve s5 --query` "
-            "runs the verbs."
-        ) from exc
-
-    client = anthropic.Anthropic()
+    api = client()
     calls: list[dict] = []
 
     thinking: dict = {"type": "adaptive"}
     if show_thinking:
         thinking["display"] = "summarized"
 
-    runner = client.beta.messages.tool_runner(
+    runner = api.beta.messages.tool_runner(
         model=model,
         max_tokens=max_tokens,
         thinking=thinking,
@@ -268,11 +283,6 @@ def ask_tools(
 
 def count_tokens(text: str, model: str = MODEL) -> int:
     """Exact token count from the API. Never use tiktoken for Claude."""
-    try:
-        import anthropic
-    except ImportError as exc:  # pragma: no cover
-        raise SystemExit("--count-tokens needs: pip install 'anthropic'") from exc
-    client = anthropic.Anthropic()
-    return client.messages.count_tokens(
+    return client().messages.count_tokens(
         model=model, messages=[{"role": "user", "content": text}]
     ).input_tokens

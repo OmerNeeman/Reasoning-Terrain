@@ -37,13 +37,42 @@ segmap preview -o tile.png           # colourised PNG, for eyeballing
 segmap legend --full                 # the 47 class definitions
 ```
 
+New here? [**QUICKSTART.md**](QUICKSTART.md) is ten minutes, no API key, with
+ten real questions and their real output.
+
 ### On real exports
 
 ```bash
+segmap index  -i data/aoi/                           # build the index once
 segmap report -i tile.tif        -o out/aoi          # one tile
 segmap report -i data/aoi/       -o out/aoi_mosaic   # a directory = mosaic
 segmap report -i data/aoi/ --classes ids.json -o out/aoi_mosaic
 ```
+
+**The index is cached.** `build_regions` / `build_chips` are query-independent
+by design, and used to be rebuilt by every single command — on the sinai mosaic
+that is **24 min and 47 GB per question**. [`cache.py`](src/segmap_digest/cache.py)
+writes them to `.segmap_cache/` as `.npy` plus a `meta.json`, keyed on the input
+files' paths, mtimes and sizes, the GSD override, the crop window, `--min-px`,
+chip size, anchor classes and a schema version constant, so a stale cache misses
+rather than answering. The two big arrays — the region-id raster and, for a
+directory input, the stitched mosaic — are memory-mapped rather than read, so
+the warm path is 0.8 s and a gigabyte instead of 24 min and 47 GB:
+
+| sinai mosaic, 1194 Mpx | cold | warm |
+|---|---:|---:|
+| `solve s5 --query "count House minarea 40"` | 24 min 24 s, 47.0 GB | **1.5 s, 1.5 GB** |
+
+Every command says on stderr which cache it used. `segmap index -i <path>`
+builds explicitly, `--list` shows what is cached, `--refresh-index` rebuilds,
+`--no-cache` bypasses, `$SEGMAP_CACHE` relocates.
+
+`--max-mpx N` crops an AOI to a centred window of N megapixels **at full
+resolution** when the whole thing is too expensive to wait for. It crops rather
+than strides because striding a label raster deletes every feature narrower than
+the stride; and it states the window, its share of the extent and its share of
+the AOI's classified pixels in every output that carries it, including the
+question handed to the model.
 
 Three things a real Smart Terrain GeoTIFF does that the fixture does not, all
 handled in [`loader.py`](src/segmap_digest/loader.py):
