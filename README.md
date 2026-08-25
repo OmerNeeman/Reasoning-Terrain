@@ -1,5 +1,7 @@
 # segmap-digest-poc
 
+> **New here, or a fresh AI session? Start with [HANDOFF.md](HANDOFF.md)** — the whole project in one file: what is real, what is not, what was decided and why, and what to do next.
+
 Turn a **47-class Smart Terrain segmentation raster** into representations a
 reasoning LLM can actually work with — and compare those representations by
 token cost, side by side.
