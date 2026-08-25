@@ -1,8 +1,12 @@
-# HANDOFF
+# HANDOFF — reasoning-terrain (RT)
 
 **Read this first. It is written for someone with zero context — a new engineer,
 or a fresh AI session — and it stands alone. The other docs are depth; this is
 the map.**
+
+The project is **reasoning-terrain**, **RT** for short; both names are used
+throughout these docs. The import package is still `segmap_digest` and the
+command is still `segmap` — those were deliberately not renamed. See §9.16.
 
 Everything numeric below was produced by running a command in this repo against
 the real data in `data/incoming/` on 2026-08-25, or by reading a file in it.
@@ -13,8 +17,8 @@ notes disagreed with the repo, the repo won and the correction is called out.
 
 ## 1. What this is, and why it exists
 
-The question this POC answers is: **what can a reasoning LLM do with a Smart
-Terrain segmentation map?**
+The question RT answers is: **what can a reasoning LLM do with a Smart Terrain
+segmentation map?**
 
 The premise is that a segmentation raster is unusually good LLM input because it
 is already symbolic. The segmenter learned `TerraRosa` as an integer and knows
@@ -31,7 +35,7 @@ Two hard scope decisions, both from the stakeholder, both load-bearing:
   segmentation-in, user-facing-interpretation-out. This matters because S3 was
   designed around a detector that does not exist — see §8.
 
-The repo is standalone at `~/PycharmProjects/ST_repos/segmap-digest-poc`, a
+The repo is standalone at `~/PycharmProjects/ST_repos/reasoning-terrain`, a
 sibling of the other ST repos. It is **not wired into `smart-terrain-v2-devenv`**,
 has **no git remote** (verified: `git remote -v` is empty), and the data is
 gitignored. Eight commits, all local.
@@ -431,23 +435,48 @@ carries two separate windows (cells for specks, m² for OOV candidates) with the
 reasoning written out at `audit.py:59-96`.
 
 **14 — Stale documentation.**
-- `README.md` still lists the retired soil-genesis priors as live
-  ("terra rossa forms on hard carbonate, rendzina on chalk and marl") and still
-  says "limestone has six morphologies, chalk exactly one" (it is seven and two).
-- `docs/solutions/S4-options.md` and `S4-products.md` still say **45 classes**
-  throughout; so does the `colormap()` docstring in `loader.py:321`.
+- `docs/solutions/S4-options.md` still says **45 classes** throughout; so does
+  the `colormap()` docstring in `loader.py:321`. (`S4-products.md` and
+  `README.md` were corrected on 2026-08-25, along with README's `l0` token count
+  and its fixture region count.)
 - `QUICKSTART.md:37` describes the synthetic fixture as coherent because it puts
   "terra rossa on hard carbonate" — the retired hypothesis, presented as a virtue.
 - `S4-options.md:420` and `:546` use rendzina/terra rossa parent-rock inference
   as product signal.
 - S3's module and doc still use detector-dispatch/cost framing (§8, item 6).
 
+**15 — The rename invalidated the whole index cache. Budget 24 minutes before
+you conclude something is broken.**
+The cache key includes the input files' **absolute paths** (§2, `cache.py`), and
+the directory moved from `segmap-digest-poc` to `reasoning-terrain`, so every
+entry under `.segmap_cache/` now misses. That is the cache working as designed —
+a stale entry misses rather than answering — but it means the **first mosaic
+query after the rename is a cold rebuild: ~24 min and 47 GB on sinai**, not the
+1.5 s the tables below quote. Nothing is wrong. Run `segmap index -i
+data/incoming/sinai/` once and the warm numbers come back. `segmap index --list`
+still lists the orphaned entries under their old paths; they are dead weight and
+can be deleted.
+
+The rename broke one other path: any **editable install made before it still
+points at the old directory**, so a bare `segmap` fails with
+`ModuleNotFoundError: No module named 'segmap_digest'` until you re-run
+`pip install -e '.[geo,dev]'` from here. `PYTHONPATH=src python3 -m
+segmap_digest.cli ...` works either way.
+
+**16 — The Python package and the CLI were deliberately *not* renamed.**
+The distribution is `reasoning-terrain`, but the import package is still
+`segmap_digest` and the command is still `segmap`. Renaming those touches every
+import, the console-script entry point, the cache schema version and 124 tests,
+and would invalidate the cache a second time — worth doing in one deliberate
+pass if the `segmap` name stops making sense, not as a side effect of a doc
+change.
+
 ---
 
 ## 10. How to run it in 60 seconds
 
 ```bash
-cd ~/PycharmProjects/ST_repos/segmap-digest-poc
+cd ~/PycharmProjects/ST_repos/reasoning-terrain
 pip install -e '.[geo,dev]'          # numpy scipy pillow rasterio pytest
 pytest tests -q                      # 123 passed, 1 skipped in ~24 s
 
@@ -455,8 +484,10 @@ segmap legend --full                 # the 47 class definitions
 segmap compare                       # zero data: synthetic tile, all levels, token counts
 ```
 
-On the real exports — **the sinai index is already warm in `.segmap_cache/`, so
-these are seconds. Do not rebuild it cold.**
+On the real exports — **the cached sinai index no longer matches, because the
+rename changed the input paths the cache keys on. The first of these commands
+rebuilds it cold: ~24 min, 47 GB. See §9.15.** After that rebuild they are
+seconds again, and the timings below apply.
 
 ```bash
 segmap index --list                                     # what is cached
@@ -530,7 +561,7 @@ slope and aspect families never activate, so in practice coverage today is
 |---|---|
 | How does the pipeline fit together, stage by stage? | `docs/pipeline.html` |
 | I want to run ten real questions and see real output | `QUICKSTART.md` |
-| Representation ladder, token costs, design rules | `README.md` (note the stale bits in §9.14) |
+| Representation ladder, token costs, design rules | `README.md` |
 | What each class *means* | `src/segmap_digest/taxonomy.py`, or `segmap legend --full` |
 | Why the soil priors were retired | `taxonomy.py`, the block above `RETIRED_PRIORS` |
 | S1 audit heuristics, and the constants that are guesses | `docs/solutions/S1-audit.md` |

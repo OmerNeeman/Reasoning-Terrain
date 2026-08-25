@@ -1,9 +1,9 @@
-# segmap-digest-poc
+# reasoning-terrain (RT)
 
 > **New here, or a fresh AI session? Start with [HANDOFF.md](HANDOFF.md)** — the whole project in one file: what is real, what is not, what was decided and why, and what to do next.
 
-Turn a **47-class Smart Terrain segmentation raster** into representations a
-reasoning LLM can actually work with — and compare those representations by
+RT turns a **47-class Smart Terrain segmentation raster** into representations a
+reasoning LLM can actually work with — and compares those representations by
 token cost, side by side.
 
 The premise: a segmentation map is unusually good LLM input because it is
@@ -108,12 +108,12 @@ drops no labelled pixel.
 ## The representation ladder
 
 Measured by `segmap compare` on the synthetic 1024×1024 tile at 0.3 m/px
-(1,583 regions):
+(1,713 regions):
 
 | level  | tokens (est.) | what it is | good for |
 |--------|--------------:|------------|----------|
 | `raw`  | 786,432 | label raster as text | **never do this** |
-| `l0`   | 368 | class histogram | composition, sanity checks |
+| `l0`   | 371 | class histogram | composition, sanity checks |
 | `chips`| 538 | fixed-grid chip index (256 px) | detection triage — the unit of spend |
 | `l1`   | 2,007 | 16×16 grid, top-3 classes per cell | "where is what" |
 | `l1q`  | 10,916 | quadtree — uniform areas collapse to one token | spatial structure, compressed |
@@ -125,7 +125,7 @@ Two things that table makes obvious:
 - **`l0`, `l1`, and `chips` are effectively free.** Start there and only descend
   when the question needs it.
 - **`l2`/`l3` scale with region *count*, not tile size**, so a fragmented map is
-  what makes them expensive — this fixture has 1,583 regions at 12 px minimum.
+  what makes them expensive — this fixture has 1,713 regions at 12 px minimum.
   `--min-area 50` (m²) and `--limit N` are the levers, and both report what they
   dropped. The quadtree's cost moves the same way: a real map with cleaner,
   larger regions compresses much harder than this noisy fixture does.
@@ -146,15 +146,24 @@ structure hiding inside the flat list:
 - five overlapping sub-ontologies (artifact / anthropogenic / hydrology /
   pedology / lithology×geomorphology / vegetation / land use)
 - the **lithology × morphology grid** — sparse and asymmetric on purpose:
-  limestone has six morphologies, chalk exactly one. Anything off-grid is a
+  limestone has seven morphologies, chalk exactly two. Anything off-grid is a
   definitional error, not a judgement call.
 - **ordinal series** — `DryGrassland → Batha → Garigue → Maquis` is the
   Mediterranean degradation gradient. A Garigue/Batha confusion is a near-miss;
   a Garigue/House confusion is not. `class_distance()` encodes that; plain
   cross-entropy does not.
-- **co-occurrence priors** — terra rossa forms on hard carbonate, rendzina on
-  chalk and marl, nari *caps* units, a dip slope needs low aspect variance,
-  badlands need relief. World knowledge the CNN never had access to.
+- **co-occurrence priors** — badlands need relief, a dip slope needs low aspect
+  variance, nari *caps* units so it is thin and banded rather than a big blocky
+  blob, a hydromorphic soil sits in a drainage low, a car sits on something
+  trafficable. World knowledge the CNN never had access to. A prior earns its
+  place only if it is a statement about the *mapped object* — its geometry, its
+  position, the physics it must obey. The soil-genesis priors (terra rossa forms
+  on hard carbonate, rendzina on chalk and marl) failed that test and are
+  **retired**: the class owner confirmed these labels are soil *types*, assigned
+  from what the surface looks like, not genetic units carrying a parent-rock
+  claim. They survive as text in
+  [`taxonomy.RETIRED_PRIORS`](src/segmap_digest/taxonomy.py), with the reason,
+  so nobody re-derives them from a textbook.
 - a 47 → 9 **superclass** collapse for coarse reasoning and legible colourmaps.
 
 **[`index.py`](src/segmap_digest/index.py)** — Stage 0, raster → symbolic index.
@@ -175,11 +184,10 @@ per-query loop.
 layer. Applies the priors deterministically and emits *candidates*:
 
 ```
-rid   class            kind                       sev  area_m2  message
-434   HydromorpicSoil  slope-violation           0.80      247  mean slope 6.7 deg outside required 0.0-5.0
-1490  BasaltRockyTerr  isolated-speck            0.65       60  island fully enclosed by Garigue (dist 1.00)
-4     Clutter          oov-candidate             0.50       32  outside the 47-class vocabulary; detector target
-245   TerraRosa        missing-expected-context  0.45      351  no boundary with any hard-carbonate unit
+rid   class               kind             sev  area_m2  message
+430   HydromorpicSoil     slope-violation  0.83      216  mean slope 8.2+-2.0 deg is 3.2 deg outside the required 0.0-5.0 deg
+4     Clutter             oov-candidate    0.69       32  32 m2 object 97% enclosed by ClayeySoil -- outside the 47-class vocabulary
+1612  BasaltRockyTerrain  isolated-speck   0.64        6  70 cell (6.3 m2) island 100% enclosed by Garigue (class distance 1.00)
 ```
 
 Deciding which candidates are real is the LLM's job. *Enumerating* them is not,
@@ -259,7 +267,7 @@ that are easy to get wrong later:
 top of each module, named, and tabulated in the docs with a "where this should
 actually come from" column. Don't treat any number they produce as a finding.
 
-## Design rules this POC follows
+## Design rules RT follows
 
 These are the things that were easy to get wrong:
 

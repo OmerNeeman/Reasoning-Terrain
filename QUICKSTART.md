@@ -1,8 +1,8 @@
 # Quickstart — ten minutes, no API key
 
-This repo turns a 47-class Smart Terrain segmentation raster into things a
-reasoning model can work with, and answers questions about it. **Most of it
-needs no API key and no data.** Start there.
+**reasoning-terrain (RT)** turns a 47-class Smart Terrain segmentation raster
+into things a reasoning model can work with, and answers questions about it.
+**Most of it needs no API key and no data.** Start there.
 
 Every command and every block of output below was run on this checkout. Timings
 are wall clock on a 28-core box; the memory figures are peak RSS from
@@ -31,6 +31,11 @@ pip install -e '.[geo]'      # numpy, scipy, pillow, rasterio
 
 `[geo]` is what lets it read GeoTIFFs. Skip it and you get the synthetic
 fixture only.
+
+Re-run this even if you installed before — the repo was renamed to
+`reasoning-terrain`, and an editable install made under the old directory name
+still points at a path that no longer exists (`segmap` then fails with
+`ModuleNotFoundError: No module named 'segmap_digest'`).
 
 ## 2. The zero-data path
 
@@ -465,4 +470,4 @@ on (`ANTHROPIC_API_KEY` unset, no `ant` CLI), so not one real request has been
 made. The first thing to run with a key is the round-trip check in
 `docs/solutions/S5-query.md`: ask a question whose answer you already know from
 `solve s5`, and check the model's prose against its own call log line by line.
-Treat the first live run as a test of this repo, not as an answer.
+Treat the first live run as a test of RT, not as an answer.

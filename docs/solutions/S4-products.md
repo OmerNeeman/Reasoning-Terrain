@@ -2,11 +2,11 @@
 
 `segmap solve s4 --product trafficability|concealment|drainage|fire_fuel` · [`s4_products.py`](../../src/segmap_digest/solutions/s4_products.py)
 
-**What it is.** The many-to-one mapping from 45 classes + slope + season into
+**What it is.** The many-to-one mapping from 47 classes + slope + season into
 what someone actually asks for. This is where the taxonomy stops being a
 classification and starts being useful.
 
-**Why a model helps.** Not at inference — at *authoring*. Hand-writing 45 × N
+**Why a model helps.** Not at inference — at *authoring*. Hand-writing 47 × N
 lookup tables with exceptions is tedious and error-prone, and an LLM is good at
 composing rules with exceptions. But once authored, the tables are checked in
 and evaluation is fully deterministic. **No LLM in the runtime path.**
@@ -33,8 +33,8 @@ per-region table.
 
 | Constant | Value | Where it should come from |
 |---|---|---|
-| `ClassDef.traffic` (45 values) | hand-set in `taxonomy.py` | **Vehicle trials, or a doctrine manual.** Not a sweep |
-| `ClassDef.canopy` (45 values) | hand-set | Canopy height / LiDAR, or field survey |
+| `ClassDef.traffic` (47 values) | hand-set in `taxonomy.py` | **Vehicle trials, or a doctrine manual.** Not a sweep |
+| `ClassDef.canopy` (47 values) | hand-set | Canopy height / LiDAR, or field survey |
 | `VEHICLES.max_slope_deg` | 25/35/45 | Vehicle spec sheets — these are real numbers someone owns |
 | `VEHICLES.min_surface` | 0.45/0.20/0.05 | Coupled to the `traffic` scale; meaningless until that's fixed |
 | `SLOPE_FREE_DEG` | 5.0 | Where degradation actually starts, per vehicle |
@@ -83,7 +83,7 @@ per-region table.
 - **Per-vehicle table externalised.** Move `VEHICLES` and the per-class `traffic`
   values into a YAML file that a domain owner edits without touching code — same
   argument as the class definitions.
-- **LLM-authored tables with a diff review.** Have the model propose the 45
+- **LLM-authored tables with a diff review.** Have the model propose the 47
   values for a new product (say, diggability) with a one-line justification each,
   then diff against expert edits. Fast way to bootstrap a new product; terrible
   way to ship one unreviewed.

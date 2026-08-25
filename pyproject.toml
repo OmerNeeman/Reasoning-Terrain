@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "segmap-digest-poc"
+name = "reasoning-terrain"
 version = "0.1.0"
 description = "Digest a 47-class Smart Terrain segmentation raster into LLM-readable representations"
 requires-python = ">=3.10"
