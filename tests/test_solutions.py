@@ -46,7 +46,9 @@ def test_s1_report_and_worklist(ridx):
     assert sum(rep.by_kind.values()) == len(rep.findings)
     text = s1_audit.worklist(rep, budget=3)
     assert "review worklist" in text
-    if len(rep.findings) > 3:
+    # The worklist is one row per ROOT CAUSE, not one per finding -- see
+    # tests/test_s1_rollup.py. The budget therefore caps causes.
+    if len(rep.causes) > 3:
         assert "omitted by budget" in text
 
 

@@ -105,17 +105,26 @@ CLASSES: list[ClassDef] = [
         "Structural bench developed on marl: near-flat facet interrupting a slope.",
         lithology="Marl", morphology="Terrace", traffic=0.7),
 
+    # SOIL CLASSES ARE SOIL TYPES, NOT GENETIC UNITS. Confirmed by the class
+    # owner. The segmenter calls something TerraRosa or Rendzina because of what
+    # the soil surface looks like, not because of what rock it formed on, so
+    # these definitions describe the soil and make no claim about parent
+    # material or about what the neighbouring polygons must be. See the
+    # retired-priors note further down before adding a parent-rock statement
+    # back in from a textbook.
     _c(15, "TerraRosa", SOIL,
-        "Terra rossa: red residual decalcification clay. Forms on HARD carbonate (limestone, "
-        "dolomite, nari) under Mediterranean climate, typically in karst pockets and on gentle "
-        "slopes. Terra rossa surrounded by chalk or marl is a strong misclassification signal.",
+        "Terra rossa: a strongly red, fine-textured, clay-rich Mediterranean soil. Low stone "
+        "content at the surface, blocky structure, shallow to moderate depth. The label is a "
+        "SOIL TYPE: it describes the soil, and carries no claim about the parent rock under "
+        "or beside it.",
         traffic=0.7),
     _c(16, "ClayeySoil", SOIL,
         "Clay-rich soil, moderate depth. Shrink-swell; poor trafficability when wet.",
         traffic=0.6),
     _c(17, "Rendzina", SOIL,
-        "Rendzina: shallow, pale, calcareous soil formed on SOFT carbonate -- chalk and marl. "
-        "The complement of terra rossa. Rendzina over basalt is implausible.", traffic=0.7),
+        "Rendzina: a shallow, pale (grey to buff), stony, strongly calcareous soil with a thin "
+        "profile and abundant carbonate fragments. The label is a SOIL TYPE: it describes the "
+        "soil, and carries no claim about the parent rock under or beside it.", traffic=0.7),
     _c(18, "HydromorpicSoil", SOIL,
         "Hydromorphic soil: seasonally waterlogged, gleyed. Occupies drainage lows and closed "
         "depressions. Should be topographically low and near Water or a drainage line.",
@@ -218,8 +227,7 @@ CLASSES: list[ClassDef] = [
 
     _c(45, "ChalkSmoothRockSlopes", ROCK,
         "Chalk smooth slopes: soft white carbonate, low surface roughness. Chalk forms no "
-        "boulder field, no dip slope and no rocky terrain -- only smooth slopes and terraces. "
-        "Strongly associated with Rendzina soil.",
+        "boulder field, no dip slope and no rocky terrain -- only smooth slopes and terraces.",
         lithology="Chalk", morphology="SmoothRockSlopes", traffic=0.4),
     _c(46, "ChalkTerrace", ROCK,
         "Structural bench developed on chalk: near-flat step interrupting a smooth chalk slope.",
@@ -315,6 +323,12 @@ ANCHOR_CLASSES: tuple[str, ...] = (
 # --- co-occurrence priors --------------------------------------------------
 # World knowledge the segmenter never had access to. Used by the consistency
 # audit, and as worked examples of what the reasoning layer can check.
+#
+# A prior earns its place only if it is a statement about the mapped OBJECT --
+# its geometry, its position, the physics it has to obey. A statement about how
+# the object came to exist is a statement about the world, not about the label,
+# and the label is all this pipeline can see. See RETIRED_PRIORS below for what
+# happens when that line is crossed.
 
 @dataclass(frozen=True)
 class Prior:
@@ -326,22 +340,46 @@ class Prior:
     aspect_variance_max: float | None = None
 
 
+# DO NOT ADD PARENT-ROCK PRIORS FOR THE SOIL CLASSES.
+#
+# Four priors used to live here: TerraRosa expects/contradicts hard/soft
+# carbonate, Rendzina expects chalk and marl, Rendzina contradicts basalt. They
+# encoded textbook soil genesis -- terra rossa as a decalcification residue of
+# hard carbonate, rendzina as the shallow soil of soft carbonate -- and they
+# were wrong ABOUT THIS MODEL. The class owner has confirmed that these classes
+# are SOIL TYPES: the segmenter assigns them from what the soil surface is like,
+# not from what rock it formed on, so "Rendzina must border chalk or marl" is
+# not a claim the labels ever made.
+#
+# The cost of the assumption was measured, on the 20-tile sinai mosaic
+# (133,976 regions): the Rendzina `expects` prior alone produced 9,793 of the
+# 41,669 findings, TerraRosa's two priors another 991, and they filled the
+# entire top-25 review worklist with one sentence repeated twenty-five times.
+# Every one of those was a false positive manufactured by this file.
+#
+# They are kept below as RETIRED_PRIORS -- text, not checks -- so that the next
+# person to read a soil-genesis chapter finds the reason they were removed
+# instead of re-deriving them. If a class owner ever states that a soil label
+# does carry a parent-material claim, that is new information and this decision
+# can be revisited; a textbook is not.
+
+RETIRED_PRIORS: tuple[tuple[str, str, str], ...] = (
+    ("TerraRosa", "expects hard carbonate (limestone / dolomite / nari)",
+     "soil genesis, not a property of the label -- retired 2026-08"),
+    ("TerraRosa", "contradicts soft carbonate and basalt",
+     "soil genesis, not a property of the label -- retired 2026-08"),
+    ("Rendzina", "expects chalk and marl",
+     "soil genesis, not a property of the label -- retired 2026-08; "
+     "generated 9,793 findings on the sinai mosaic, all false positives"),
+    ("Rendzina", "contradicts basalt",
+     "soil genesis, not a property of the label -- retired 2026-08"),
+)
+
+# What survives is geometry and physics, which are properties of the mapped
+# object rather than of its history: badlands need relief, a dip slope needs a
+# coherent aspect, a hydromorphic soil sits low, a vehicle sits on something
+# trafficable.
 PRIORS: tuple[Prior, ...] = (
-    Prior("TerraRosa", "expects",
-          ("LimestoneRockyTerrain", "LimestoneStoneyTerrain", "DolomiteRockyTerrain",
-           "DolomiteStoneyTerrain", "NariStoneyTerrain"),
-          "Terra rossa is a residual decalcification clay of hard carbonate."),
-    Prior("TerraRosa", "contradicts",
-          ("ChalkSmoothRockSlopes", "ChalkTerrace", "MaralBadlands",
-           "MaralSmoothRockSlopes", "BasaltRockyTerrain"),
-          "Terra rossa does not form on soft carbonate or on basalt."),
-    Prior("Rendzina", "expects",
-          ("ChalkSmoothRockSlopes", "ChalkTerrace", "MaralSmoothRockSlopes",
-           "MaralTerrace"),
-          "Rendzina is the shallow calcareous soil of chalk and marl."),
-    Prior("Rendzina", "contradicts",
-          ("BasaltRockyTerrain", "BasaltStoneyTerrain", "BasaltBoulder"),
-          "Rendzina requires a carbonate parent material."),
     Prior("MaralBadlands", "expects", (),
           "Badlands require dissected relief; near-flat ground falsifies the label.",
           slope_deg=(8.0, 90.0)),
