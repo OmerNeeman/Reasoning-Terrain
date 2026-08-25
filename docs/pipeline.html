@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>segmap-digest — what goes in, what comes out</title>
+<style>
+/* Shared house style with src/segmap_digest/report.py, so this page and a
+   generated report read as one system. Additions below the marked line. */
+:root { color-scheme: light dark; --fg:#1a1a1a; --bg:#fbfaf8; --mut:#666;
+        --line:#ddd; --card:#fff; --warn:#8a5a00; --warnbg:#fff8e6; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg:#e6e4e0; --bg:#151514; --mut:#9a968f; --line:#333;
+          --card:#1e1e1c; --warn:#e0b45a; --warnbg:#2a2312; } }
+* { box-sizing: border-box; }
+body { margin:0; padding:2rem 1.5rem 6rem; background:var(--bg); color:var(--fg);
+       font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+       max-width:1180px; margin-inline:auto; overflow-x:hidden; }
+h1 { font-size:1.7rem; margin:0 0 .25rem; letter-spacing:-.02em; }
+h2 { font-size:1.15rem; margin:2.75rem 0 .5rem; padding-top:1rem;
+     border-top:1px solid var(--line); letter-spacing:-.01em; }
+h3 { font-size:.95rem; margin:1.5rem 0 .4rem; color:var(--mut);
+     text-transform:uppercase; letter-spacing:.06em; }
+p  { margin:.5rem 0; max-width:75ch; }
+.sub { color:var(--mut); margin-bottom:1.5rem; }
+.note { color:var(--mut); font-size:.87rem; max-width:80ch; }
+.warn { background:var(--warnbg); border-left:3px solid var(--warn);
+        padding:.7rem .9rem; margin:1rem 0; font-size:.88rem; color:var(--warn);
+        max-width:80ch; border-radius:0 4px 4px 0; }
+.scroll { overflow-x:auto; margin:.6rem 0; border:1px solid var(--line);
+          border-radius:6px; background:var(--card); max-width:100%; }
+table { border-collapse:collapse; font:12.5px/1.45 ui-monospace,SFMono-Regular,
+        Menlo,monospace; width:100%; }
+th,td { text-align:left; padding:.32rem .6rem; white-space:nowrap;
+        border-bottom:1px solid var(--line); vertical-align:top; }
+th { background:var(--card); font-weight:600; color:var(--mut); }
+tr:last-child td { border-bottom:none; }
+td.msg { white-space:normal; min-width:26rem; color:var(--mut); }
+.kpi { display:flex; flex-wrap:wrap; gap:1.6rem; margin:.8rem 0 1.2rem; }
+.kpi div { min-width:8rem; }
+.kpi b { display:block; font-size:1.5rem; letter-spacing:-.02em; }
+.kpi span { font-size:.78rem; color:var(--mut); text-transform:uppercase;
+            letter-spacing:.05em; }
+pre { background:var(--card); border:1px solid var(--line); border-radius:6px;
+      padding:.7rem .9rem; overflow-x:auto; font-size:12.5px; margin:.6rem 0;
+      max-width:100%; }
+code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.92em; }
+nav { font-size:.85rem; color:var(--mut); margin:1rem 0 0; }
+nav a { color:inherit; margin-right:1rem; }
+
+/* ---- additions for this page only ---------------------------------- */
+.pipe { margin:1.4rem 0 .5rem; }
+.stage { display:grid; grid-template-columns:9.5rem 1fr; gap:1rem;
+         background:var(--card); border:1px solid var(--line);
+         border-radius:6px; padding:.75rem .9rem; align-items:start; }
+.stage .who { font:600 12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+              text-transform:uppercase; letter-spacing:.05em; color:var(--fg);
+              padding-top:.1rem; }
+.stage .who em { display:block; font:400 11px/1.35 ui-sans-serif,system-ui,sans-serif;
+                 text-transform:none; letter-spacing:0; color:var(--mut);
+                 margin-top:.2rem; }
+.stage .what { font-size:.88rem; }
+.stage .what b { font-weight:600; }
+.stage ul { margin:.25rem 0 0; padding-left:1.1rem; }
+.stage li { margin:.15rem 0; }
+.arrow { text-align:center; color:var(--mut); font-size:.9rem;
+         line-height:1; margin:.3rem 0; letter-spacing:.1em; }
+.terminus { border-style:dashed; }
+.row { display:flex; flex-wrap:wrap; gap:.5rem; margin-top:.35rem; }
+.chip { display:inline-block; border:1px solid var(--line); border-radius:4px;
+        padding:.16rem .45rem; font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;
+        background:var(--bg); color:var(--fg); white-space:nowrap; }
+.chip.mut { color:var(--mut); }
+.cache { border-left:3px solid var(--warn); background:var(--warnbg);
+         color:var(--warn); border-radius:0 4px 4px 0; padding:.45rem .8rem;
+         font-size:.82rem; margin:.35rem 0 .35rem 10.5rem; max-width:60ch; }
+.danger { background:var(--warnbg); border:1px solid var(--warn);
+          border-left-width:5px; border-radius:0 6px 6px 0;
+          padding:1rem 1.2rem; margin:1.2rem 0; }
+.danger h3 { color:var(--warn); margin-top:1.1rem; }
+.danger h3:first-child { margin-top:0; }
+.danger p, .danger li { color:var(--warn); max-width:78ch; }
+.danger ul { padding-left:1.15rem; margin:.3rem 0; }
+.danger li { margin:.35rem 0; font-size:.9rem; }
+.ok { color:var(--mut); }
+/* The outputs menu has four prose-ish columns; let it wrap to fit rather
+   than pushing the honest-status column off the edge of the scroller. */
+table.menu { table-layout:fixed; min-width:52rem; }
+table.menu th, table.menu td { white-space:normal; }
+table.menu td.msg { min-width:0; }
+table.menu code { overflow-wrap:anywhere; }
+table.menu col.c1 { width:11%; } table.menu col.c2 { width:20%; }
+table.menu col.c3 { width:22%; } table.menu col.c4 { width:47%; }
+@media (max-width:640px) {
+  .stage { grid-template-columns:1fr; gap:.35rem; }
+  .cache { margin-left:0; }
+}
+</style>
+</head>
+<body>
+
+<h1>segmap-digest: what goes in, what comes out, what happens in between</h1>
+<p class="sub">A Smart Terrain segmentation raster is already symbolic — the segmenter
+knows <code>TerraRosa</code> as an integer and nothing about decalcification clay.
+This pipeline turns that raster into representations a reasoning model can work
+with, and answers questions from them. No RGB imagery is involved anywhere.</p>
+
+<nav>
+  <a href="#pipeline">Pipeline</a>
+  <a href="#inputs">Inputs</a>
+  <a href="#outputs">Outputs</a>
+  <a href="#ladder">Ladder</a>
+  <a href="#trust">What to trust</a>
+  <a href="#example">Worked example</a>
+</nav>
+
+<div class="kpi">
+  <div><b>47</b><span>classes in the taxonomy</span></div>
+  <div><b>174.5 km²</b><span>sinai mosaic, classified</span></div>
+  <div><b>133,976</b><span>regions on that mosaic</span></div>
+  <div><b>24 min → 1.5 s</b><span>cold index → warm query</span></div>
+  <div><b>6</b><span>digests, 6 solutions</span></div>
+</div>
+
+<p class="note">Every number on this page was reproduced against this checkout on
+the sinai drop (20 GeoTIFFs, 31822×37535 px @ 0.496 m/px) or the synthetic
+fixture, and is sourced in the tables below. Nothing here is a finding about
+the ground — see <a href="#trust">What to trust</a>.</p>
+
+
+<h2 id="pipeline">1. The pipeline</h2>
+
+<p>Five stages. Everything left of <b>solutions</b> is query-independent and
+computed once; everything right of it is cheap.</p>
+
+<div class="pipe">
+
+  <div class="stage terminus">
+    <div class="who">input<em>on disk</em></div>
+    <div class="what">
+      <b>A label raster</b> — one band, one integer class id per pixel.
+      <div class="row">
+        <span class="chip">label raster (.tif / .npy / .png)</span>
+        <span class="chip mut">+ optional DEM</span>
+        <span class="chip mut">+ optional 2nd-date raster (S6)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <div class="stage">
+    <div class="who">loader<em>loader.py · mosaic.py</em></div>
+    <div class="what">
+      <b>Wire ids → dense taxonomy ids, by <em>name</em>.</b>
+      <ul>
+        <li>Sparse wire ids <code>0..241</code> read from the
+            <code>ID_TO_LABEL_MAPPING</code> GeoTIFF tag; an unknown name is an
+            error, never folded into <code>Unclassified</code>.</li>
+        <li>Nodata mask: every <code>0</code> is no-data, and every fraction
+            downstream is over classified pixels only.</li>
+        <li>A directory input is mosaicked by affine transform; mixed CRS or
+            resolution raises rather than resampling.</li>
+        <li>Geographic CRS: <code>transform.a</code> is degrees, converted to
+            metres from the tile's latitude.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <div class="stage">
+    <div class="who">index<em>index.py</em></div>
+    <div class="what">
+      <b>Raster → two symbolic indices</b>, because they answer different questions.
+      <ul>
+        <li><b>Region index</b> — connected components, each with area, perimeter,
+            compactness, elongation, mean/σ slope, elevation, aspect circular
+            variance, and a neighbour graph with shared boundary lengths.
+            Tells you <em>why</em>.</li>
+        <li><b>Chip index</b> — a fixed grid at the detector's input size (256 px
+            default), each chip with a class histogram, entropy, class-pair
+            interface lengths and distance-to-anchor-class fields. The
+            <em>unit of spend</em> for detection triage.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="cache">
+    <b>Cached.</b> Both indices are query-independent, so they are built once and
+    memory-mapped afterwards. On the 174.5 km² sinai mosaic:
+    <b>cold 24 min 24 s / 47.0 GB → warm 1.5 s / 1.5 GB</b>, 7.2 GB on disk.
+    Keyed on input paths, mtimes, sizes, GSD, crop window, <code>--min-px</code>,
+    chip size, anchor classes and a schema version — a stale cache misses rather
+    than answering. Every command says on stderr which cache it used.
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <div class="stage">
+    <div class="who">digests<em>digests.py</em></div>
+    <div class="what">
+      <b>Index → text a model can read.</b> TSV, not JSON — roughly 2–3× fewer
+      tokens for the same content, with the legend emitted once instead of
+      repeating key names per row.
+      <div class="row">
+        <span class="chip">l0 · class histogram</span>
+        <span class="chip">l1 · N×N grid</span>
+        <span class="chip">l1q · quadtree</span>
+        <span class="chip">l2 · region table</span>
+        <span class="chip">l3 · adjacency graph</span>
+        <span class="chip">chips · chip index</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <div class="stage">
+    <div class="who">solutions<em>solutions/</em></div>
+    <div class="what">
+      <b>Six map-consuming solutions</b> over the shared index. Numbers come from
+      code; the model, where it appears at all, chooses <em>which</em> question to
+      compute, never the arithmetic.
+      <div class="row">
+        <span class="chip">S1 audit</span>
+        <span class="chip">S2 adjudicate</span>
+        <span class="chip">S3 attention / triage</span>
+        <span class="chip">S4 products</span>
+        <span class="chip">S5 query</span>
+        <span class="chip">S6 change</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">▼</div>
+
+  <div class="stage terminus">
+    <div class="who">outputs<em>stdout / files</em></div>
+    <div class="what">
+      TSV on stdout, product PNGs, a policy JSON, and one self-contained HTML
+      report that runs the whole thing end to end.
+      <div class="row">
+        <span class="chip">HTML report</span>
+        <span class="chip">worklists &amp; verdicts</span>
+        <span class="chip">ranked chips + policy</span>
+        <span class="chip">product rasters</span>
+        <span class="chip">structured answers</span>
+        <span class="chip">change events</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<p class="note"><b>The LLM is never in a per-item loop.</b> For triage the model
+compiles a query into a small cached policy and a deterministic scorer applies it
+to millions of chips; amortised reasoning cost per chip ≈ 0.</p>
+
+
+<h2 id="inputs">2. Inputs — exactly what is accepted</h2>
+
+<p>One band, one integer per pixel, and a way to know what the integers mean.
+Everything else is optional. The traps below were all found on real exports.</p>
+
+<div class="scroll">
+<table>
+<tr><th>What</th><th>Accepted</th><th class="msg">The trap, and what the code does about it</th></tr>
+<tr>
+  <td>label raster</td>
+  <td>single-band GeoTIFF, <code>.npy</code>, single-band PNG</td>
+  <td class="msg">A colourised RGB export is <b>refused</b>, not guessed at:
+    <code>"is a 3-band image. This tool wants a single-band label raster, not a
+    colourised one — recovering class ids from RGB is lossy and ambiguous."</code>
+    Colourised maps are for humans; asking a VLM to read exact colours off a
+    47-entry legend is a task VLMs are bad at.</td>
+</tr>
+<tr>
+  <td>class ids</td>
+  <td><code>ID_TO_LABEL_MAPPING</code> GeoTIFF tag, else <code>--classes ids.json</code></td>
+  <td class="msg">On the wire the ids are <b>sparse, 0..241</b> — not the dense
+    0..46 of <code>taxonomy.py</code>. The tag is read automatically and mapped
+    <b>by name</b>. A name the taxonomy does not define is an <b>error</b>, not
+    something to fold into <code>Unclassified</code>. A raster value with no entry
+    in its mapping raises too.
+    <code>examples/smart_terrain_class_ids.json</code> is the sinai drop's mapping,
+    47 entries spanning ids 0–241.</td>
+</tr>
+<tr>
+  <td>nodata</td>
+  <td>read from the GeoTIFF header</td>
+  <td class="msg"><b><code>nodata = 0</code> collides with <code>Unclassified</code>'s
+    id.</b> The two are not distinguishable in the file. Every 0 is treated as
+    no-data, every fraction is over classified pixels only, and the report says how
+    much was excluded. If the segmenter genuinely emits <code>Unclassified</code>,
+    that class is being thrown away and the exporter needs to give nodata a value
+    of its own.</td>
+</tr>
+<tr>
+  <td>georeference</td>
+  <td>any CRS the file declares</td>
+  <td class="msg"><b>A geographic CRS means <code>transform.a</code> is degrees.</b>
+    A 0.5 m/px export in EPSG:4326 has a transform of ~<code>5e-06</code>; reading
+    that as metres made every area in the report <b>ten orders of magnitude too
+    small</b>. <code>geotiff_gsd()</code> now converts from the tile's mean
+    latitude.</td>
+</tr>
+<tr>
+  <td>a directory</td>
+  <td>adjacent GeoTIFFs, mosaicked</td>
+  <td class="msg">Placement comes from the affine transforms. <b>Mixed CRS or pixel
+    size raises rather than resampling</b> — resampling a <em>label</em> raster
+    invents classes at every boundary. Mosaic, don't tile: regions are connected
+    components, so per-tile analysis cuts one wadi across four tiles into four
+    regions with four wrong areas and four wrong neighbour lists. The mosaic is
+    cropped to the bounding box of actual data, which drops no labelled pixel.</td>
+</tr>
+<tr>
+  <td>DEM (optional)</td>
+  <td><code>--dem file.tif|.npy</code></td>
+  <td class="msg">Attaching one switches on slope, aspect and every morphology
+    check. <b>No AOI here ships one</b> — see <a href="#trust">§5</a>. For this
+    taxonomy the DEM is worth more than RGB: dip slope, terrace, badlands and
+    boulder field are all <em>morphology</em>.</td>
+</tr>
+<tr>
+  <td>2nd date (optional)</td>
+  <td><code>--second later.tif</code></td>
+  <td class="msg">A second-date label raster over the same ground, for S6. Without
+    one, S6 runs against a synthetic second date off the fixture.</td>
+</tr>
+<tr>
+  <td>too big?</td>
+  <td><code>--max-mpx N</code></td>
+  <td class="msg">Takes a <b>centred crop</b> of at most N megapixels at full
+    resolution — never a stride, because striding a label raster deletes every
+    feature narrower than the stride (roads and wadis are 1–4 px on sinai). The
+    window, its share of the extent and its share of classified pixels are stated
+    in every output that carries it, including the question handed to the model.</td>
+</tr>
+</table>
+</div>
+
+
+<h2 id="outputs">3. Outputs — the full menu</h2>
+
+<p>Each row: the question it answers, the command, and its honest status.
+<code>$T</code> is a tile or a directory of tiles.</p>
+
+<div class="scroll">
+<table class="menu">
+<colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"></colgroup>
+<tr><th>Output</th><th class="msg">Question it answers</th><th>Command</th><th class="msg">Status &mdash; what it is really worth</th></tr>
+
+<tr>
+  <td><b>HTML report</b></td>
+  <td class="msg">"Show me the whole pipeline on this AOI, on one page."</td>
+  <td><code>segmap report -i $T -o out/aoi</code></td>
+  <td class="msg"><span class="ok">Works.</span> 17 s on the fixture. Writes
+    <code>index.html</code> plus PNGs; every section states what it assumed. The
+    fastest way to see what the thing does.</td>
+</tr>
+
+<tr>
+  <td><b>The six digests</b></td>
+  <td class="msg">"Give me a representation of this map at a token budget I can afford."</td>
+  <td><code>segmap digest l2 --limit 40</code><br><code>segmap compare</code></td>
+  <td class="msg"><span class="ok">Works.</span> Costs in <a href="#ladder">§4</a>.
+    Every <code>--limit</code> emits <code># NOTE: N omitted</code> — a cap that
+    reads as "this is everything" is how you ship a wrong answer, and a test
+    enforces it.</td>
+</tr>
+
+<tr>
+  <td><b>S1 worklist</b><br>+ coverage statement</td>
+  <td class="msg">"Which labels contradict their context, slope or geometry — and
+    what did you <em>not</em> check?"</td>
+  <td><code>segmap solve s1 -i $T --budget 8</code></td>
+  <td class="msg"><b>The coverage statement is the trustworthy part; the findings
+    are a worklist, not a verdict.</b> Findings roll up by root cause, so the sinai
+    mosaic is 26,592 findings → <b>178 decisions</b>. But there is no measured
+    false-positive rate — that is S1's own blocking question, needing ~150 reviewed
+    regions.</td>
+</tr>
+
+<tr>
+  <td><b>S2 verdicts</b></td>
+  <td class="msg">"This region is suspect — what <em>is</em> it, or is it undecidable?"</td>
+  <td><code>segmap solve s2 -i $T --region 245</code></td>
+  <td class="msg">Verdict vocabulary is <code>KEEP</code> / <code>SWITCH:&lt;name&gt;</code>
+    / <code>UNDECIDABLE-NEEDS-&lt;data&gt;</code>, with a scored candidate table.
+    <b>Abstention is a first-class output and is designed to fire often</b>:
+    Limestone/Dolomite/Nari are not separable without a geological map, and a system
+    that picks one confidently manufactures corruptions. Net gain is corrections
+    minus corruptions and can be negative. With no DEM the morphology column is
+    unscored, so most verdicts here rest on context alone.</td>
+</tr>
+
+<tr>
+  <td><b>S3 ranked chips</b><br>+ policy JSON</td>
+  <td class="msg">"Which chips are worth sending to an expensive detector?"</td>
+  <td><code>segmap solve s3 -i $T --policy vehicles --chip 128</code><br><code>… --save-policy p.json</code></td>
+  <td class="msg"><span class="ok">Runs.</span> Reports cost reduction, a
+    <b>3% control set drawn from <em>rejected</em> chips</b> — the only unbiased
+    recall signal you will ever have — and warns in its own output that
+    "score captured" is prior mass, <b>not recall</b>. Recall needs detector
+    outcomes, which do not exist yet.</td>
+</tr>
+
+<tr>
+  <td><b>S4 product rasters</b><br>PNG + per-region tables</td>
+  <td class="msg">"Can I drive there / hide there / will it pool / will it burn?"</td>
+  <td><code>segmap solve s4 -i $T --product trafficability --wet --regions -o out/traf.png</code></td>
+  <td class="msg">Four products: <code>trafficability</code>,
+    <code>concealment</code>, <code>drainage</code>, <code>fire_fuel</code>. Each a
+    float raster in [0,1] plus per-superclass means and an optional per-region
+    table. <b>Half of it is inert without a DEM</b> — measured, see
+    <a href="#trust">§5</a>. No LLM in the runtime path; a model helps
+    <em>author</em> the lookup tables, never evaluate them.</td>
+</tr>
+
+<tr>
+  <td><b>S5 structured answers</b></td>
+  <td class="msg">"How many, how much, how far, what can I reach?"</td>
+  <td><code>segmap solve s5 -i $T --query "count House minarea 40"</code></td>
+  <td class="msg"><span class="ok">The most solid surface here.</span> Six verbs —
+    <code>find count area distance corridor describe</code> — and every result
+    carries the <b>region ids it was computed from</b>, so any number can be
+    re-derived. Four statuses: <code>ok</code>, <code>empty</code> (a measured zero
+    — a real finding), <code>unanswerable</code> (<b>explicit refusal in words</b>:
+    vehicle type, building function, fence presence, anything about colour — an
+    empty table saying "none found" would be a wrong answer), and
+    <code>error</code>.</td>
+</tr>
+
+<tr>
+  <td><b>S5 natural language</b></td>
+  <td class="msg">Same questions, asked in prose.</td>
+  <td><code>segmap ask -i $T "How much of this tile is bare rock?"</code><br><code>segmap tools</code></td>
+  <td class="msg"><b>Never exercised against the live API.</b> The six verbs are
+    given to the model as tools and it plans; it cannot state a count, area or
+    distance that did not come back from a tool call, because it has no other way
+    to see the raster. The answer is followed by the call log and every entry is a
+    <code>solve s5</code> string you can rerun. <code>segmap tools</code> prints the
+    surface with no SDK and no key. <code>--digest</code> is the un-grounded path —
+    treat its arithmetic as an estimate.</td>
+</tr>
+
+<tr>
+  <td><b>S6 change events</b></td>
+  <td class="msg">"What actually changed between two dates — and what is just phenology?"</td>
+  <td><code>segmap solve s6 -i $T --second later.tif</code></td>
+  <td class="msg"><span class="ok">Runs.</span> Categorises each transition —
+    <code>succession</code>, <code>construction</code>, <code>infrastructure</code>,
+    <code>phenology</code>, <code>impossible</code> — and reports the share that is
+    plausibly real change. A <code>Limestone→Dolomite</code> transition is reported
+    as <code>impossible</code>, i.e. a label error, not a landslide.
+    <b>Co-registration is the untested threat</b>: the null test and the 1-px-shift
+    test have not been run.</td>
+</tr>
+</table>
+</div>
+
+
+<h2 id="ladder">4. The representation ladder</h2>
+
+<p>Measured by <code>segmap compare</code>. The fixture column is a 1024×1024 tile
+at 0.3 m/px with 1,583 regions; the mosaic column is the whole sinai AOI —
+1194 Mpx, 133,976 regions.</p>
+
+<div class="scroll">
+<table>
+<tr><th>level</th><th>tokens, fixture</th><th>tokens, sinai mosaic</th><th class="msg">what it is / good for</th></tr>
+<tr><td><code>raw</code></td><td>786,432</td><td>895,829,077</td><td class="msg">The label raster as text. <b>Never do this.</b></td></tr>
+<tr><td><code>l0</code></td><td>371</td><td>398</td><td class="msg">Class histogram. Composition, sanity checks. <b>Free at any scale</b> — it scales with class count, not area.</td></tr>
+<tr><td><code>l1</code></td><td>2,007</td><td>1,541</td><td class="msg">N×N grid, top-3 classes per cell. "Where is what." <b>Free at any scale</b> — fixed grid.</td></tr>
+<tr><td><code>chips</code></td><td>538</td><td>425,882</td><td class="msg">Fixed-grid chip index — the unit of spend for detection triage. <b>Cheap per chip, but it scales with chip count</b>: 1,024 chips on the fixture, 18,104 on the mosaic. Not free at AOI scale.</td></tr>
+<tr><td><code>l1q</code></td><td>10,916</td><td>1,735,351</td><td class="msg">Quadtree — uniform areas collapse to one token. Spatial structure, compressed. Compresses far harder on a clean map than on this noisy fixture.</td></tr>
+<tr><td><code>l3</code></td><td>36,534</td><td>1,701,818</td><td class="msg">Region adjacency graph. Connectivity, corridors.</td></tr>
+<tr><td><code>l2</code></td><td>47,908</td><td><b>3,047,077</b></td><td class="msg">Region table with terrain attributes — the workhorse for audit and adjudication on a tile, and <b>unusable at AOI scale</b>.</td></tr>
+</table>
+</div>
+
+<p>Two things that table makes obvious:</p>
+<ul>
+<li><b><code>l0</code> and <code>l1</code> are effectively free at any size.</b>
+  Start there and only descend when the question needs it. <code>chips</code> is
+  free on a tile but is 425k tokens on the mosaic.</li>
+<li><b><code>l2</code>/<code>l3</code> scale with region <em>count</em>, not tile
+  size</b>, so a fragmented map is what makes them expensive.
+  <code>--min-area</code> and <code>--limit</code> are the levers and both report
+  what they dropped. At 3.05M tokens, sending <code>l2</code> for the sinai mosaic
+  is not an option at any price — which is the whole reason the S5 verbs compute
+  over the index instead of handing the model a table.</li>
+</ul>
+
+
+<h2 id="trust">5. What is trustworthy, and what is not</h2>
+
+<p><b>Trustworthy:</b> everything counted, measured or connected-component'd from
+the label raster — class fractions, areas, region counts, adjacency, pixel-to-pixel
+distances — plus every refusal and every abstention, which are enforced in code
+rather than left to a prompt.</p>
+
+<div class="danger">
+<h3>Not trustworthy — read before quoting any number from this system</h3>
+
+<ul>
+<li><b>There is no DEM on any AOI here, so every slope reads 0.0</b> — a
+  valid-looking number meaning "unmeasured". This switches off roughly half the
+  taxonomy. Consequences, all measured on the sinai tile:
+  <ul>
+    <li><code>corridor DirtRoad vehicle wheeled</code> returns <b>99.0% of the
+      classified area reachable</b>. The slope term is inert and the tile is 68%
+      Rendzina and 13% DryGrassland, both scored as easily passable, so almost
+      everything connects to almost everything. Arithmetically correct,
+      analytically useless. On the fixture, which <em>has</em> a DEM, the same
+      query returns 63.5%.</li>
+    <li><b>S1's substantive coverage is 3.0% of classified area</b> on the sinai
+      mosaic (15 of 33 classes present; 1.4% and 8 of 20 classes on the single
+      tile). The other 97% is <b>unexamined, not clean</b>. The slope and aspect
+      priors abstain rather than score against zeros.</li>
+    <li><b>Half of S4 is inert.</b> Measured on the sinai tile: <code>drainage</code>
+      returns p10 = p90 = 0.60 — a constant with a binary wet-class bump, carrying
+      no information; <code>concealment</code> means 0.00 across soil, rock and road,
+      i.e. 98% of the tile, because both its relief term and the canopy of the
+      classes present are zero. Only <code>trafficability</code> and
+      <code>fire_fuel</code> vary at all, and trafficability degrades to a pure
+      per-class lookup.</li>
+  </ul>
+</li>
+
+<li><b>The class semantics are under review.</b> The model uses
+  <code>Rendzina</code> as a catch-all for pale bare soil: it is <b>64.9% of the
+  sinai mosaic</b>, against <b>2.55%</b> for every chalk and marl class combined.
+  The class owner has confirmed these are surface soil types, not genetic units —
+  which invalidated four textbook co-occurrence priors that had manufactured
+  <b>10,788 of 41,669 findings</b> as false positives. The definitions in
+  <code>taxonomy.py</code> are a starting point pending expert review, and they are
+  the text every piece of reasoning here runs on.</li>
+
+<li><b>The live LLM path has never made a real request.</b> <code>anthropic</code>
+  is installed and imports, but there were no credentials on the machine this was
+  written on, so not one request has been made to the API. Treat the first live run
+  as a test of this repo, not as an answer.</li>
+
+<li><b>Every heuristic constant in <code>solutions/</code> is a guess.</b> They are
+  grouped at the top of each module, named, and tabulated in each solution doc with
+  a "where this should actually come from" column. Two exceptions are marked as
+  measured, not guessed: S1's speck window (32–128 resolution cells) and the
+  min-area floor's effect. Everything else — vehicle surface thresholds, canopy
+  values, severity bands, enclosure shares — is invention. Do not treat any number
+  they produce as a finding.</li>
+
+<li><b>Counts are not verdicts.</b> S1 reports 26,592 candidate findings on the
+  mosaic with no measured false-positive rate. S3 reports "score captured" which is
+  prior mass, not recall. S6 has not been run against its own null test.</li>
+</ul>
+</div>
+
+
+<h2 id="example">6. A worked example</h2>
+
+<p>The real thing, end to end, on one sinai tile. From
+<code>QUICKSTART.md</code> §4, reproduced against this checkout — the
+<code># input:</code> and <code># using cached</code> stderr lines are elided.</p>
+
+<h3>Set the tile once</h3>
+<pre>T=data/incoming/sinai/tile_cropped_x802_y847_z0.5.tif
+segmap index -i $T          # 29 s, once — 11,058 regions, 1,024 chips</pre>
+
+<h3>What am I even looking at?</h3>
+<pre>$ segmap solve s5 -i $T --query describe
+# describe (20 classes present): describe
+# fractions are over 67108864 classified pixels (0.0% of the extent is nodata and excluded); region counts are after the index's min-area cut, so small specks are missing from them
+class_id	name	superclass	frac	area_m2	n_regions
+17	Rendzina	soil	0.6860	11334244	2686
+26	DryGrassland	vegetation	0.1309	2163353	5124
+15	TerraRosa	soil	0.0891	1472069	513
+19	ClayeyDeepSoil	soil	0.0636	1049989	873
+23	Batha	vegetation	0.0118	195089	1010
+12	MaralBadlands	rock	0.0086	141585	74
+9	DirtRoad	road	0.0025	40602	23
+29	LimestoneStoneyTerrain	rock	0.0023	37896	304
+33	LimestoneTerrace	rock	0.0020	32628	140</pre>
+<p class="note">Two-thirds Rendzina. Arid rangeland with dirt tracks, no settlement.</p>
+
+<h3>How much dirt road is there?</h3>
+<pre>$ segmap solve s5 -i $T --query "area DirtRoad"
+# area_m2: area DirtRoad
+= 40,593.83
+# evidence: region ids 36, 34, 20, 18, 28, 16, 19, 17, 32, 29, 38, 31, 25, 33, 37, 21, 30, 26, 24, 27, 22, 23, 35</pre>
+<p class="note">4 hectares of track across 23 regions on a 16.6 km² tile. This is
+the arithmetic that was ten orders of magnitude wrong before the geographic-CRS
+fix. The region ids are the receipt.</p>
+
+<h3>Now ask it something it cannot answer</h3>
+<pre>$ segmap solve s5 -i $T --query "find TerraRosa slope > 10"
+query error: no DEM is attached to this tile, so every region's slope is unmeasured (stored as 0.0). A slope filter cannot be applied; attach a DEM with --dem and ask again
+
+$ segmap solve s5 -i $T --query "count Fence"
+query error: 'Fence' is outside the 47-class vocabulary: there is no fence class; a fence is also sub-metre wide and would not survive segmentation at this GSD
+
+$ segmap solve s5 -i $T --query "count Car"
+# count: count Car
+= 0.00</pre>
+<p class="note">Three different kinds of "no". The first abstains because the input
+is missing. The second refuses in words, because an empty table saying "no fences
+found" would be a wrong answer rather than a missing one. The third is a
+<b>measured zero</b> — <code>Car</code> is in the vocabulary, so this is a finding
+about the ground. (The tool layer returns that third case as
+<code>status: empty</code> with the sentence spelled out; the bare CLI renderer
+does not repeat it.)</p>
+
+<h3>And the audit, which leads with what it did not check</h3>
+<pre>$ segmap solve s1 -i data/incoming/sinai/ --budget 8
+# S1 consistency audit -- 133976 regions, 178 root causes, 26592 candidate findings
+# coverage: 15/33 classes checked, 3.0% of area. Read the coverage block before reading the findings.
+
+## coverage -- what was actually examined
+# 15 of 33 classes present on this map have at least one active substantive check (5 check families exist; 47 classes are defined).
+# those classes hold 3.0% of classified region area.
+#
+# A CLASS WITH NO ACTIVE CHECK IS UNEXAMINED, NOT CLEAN. ...
+# ABSTAINED -- no DEM: every mean_slope and aspect_circvar is 0.0, which is a valid-looking number meaning 'unmeasured'. The slope and aspect priors did not run rather than score against it.
+
+class	area_m2	pct_map	substantive	geometry_only
+Rendzina	113316788	64.95%	NONE -- UNEXAMINED	enclosed-speck
+DryGrassland	30891866	17.71%	NONE -- UNEXAMINED	enclosed-speck
+Batha	6723824	3.85%	NONE -- UNEXAMINED	enclosed-speck
+MaralBadlands	3312539	1.90%	lithology-isolation	enclosed-speck</pre>
+<p class="note">This is the shape of an honest output from this system: a number
+you can use, followed by the sentence that tells you what it does not cover.</p>
+
+
+<h2>Where to go next</h2>
+<p class="note">
+<code>README.md</code> — the design rationale and the taxonomy's structure ·
+<code>QUICKSTART.md</code> — ten minutes, no API key, ten real questions ·
+<code>docs/solutions/S1-audit.md</code> … <code>S6-change.md</code> — per-solution
+heuristics, open questions and evaluation plans, each led by its blocking question.
+</p>
+
+</body>
+</html>
