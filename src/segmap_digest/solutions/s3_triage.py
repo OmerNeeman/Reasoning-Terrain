@@ -39,6 +39,13 @@ ENTROPY_WEIGHT = {"R1": 0.0, "R2": 0.15, "R3": 0.5}
 # recall estimate. Without this there is NO signal that you have over-pruned.
 CONTROL_SET_FRACTION = 0.03
 
+# Below this many control chips the recall estimate has confidence intervals
+# too wide to act on (one chip cannot distinguish 95% recall from 60%), and
+# render() must say so instead of presenting it as a measurement. Where this
+# should come from: the CI width required on the recall estimate -- the same
+# decision that should set CONTROL_SET_FRACTION.
+CONTROL_MIN_INFORMATIVE = 30
+
 
 @dataclass
 class ContextRule:
@@ -240,6 +247,11 @@ def select(
 
     rng = np.random.default_rng(seed)
     n_ctl = int(round(len(rejected) * control_frac))
+    if rejected and control_frac > 0:
+        # Rounding can hit 0 for pools under ~17 rejected chips, which would
+        # silently delete the only unbiased recall signal. One control chip is
+        # weak evidence but never zero evidence; render() states the weakness.
+        n_ctl = max(1, n_ctl)
     idx = rng.choice(len(rejected), size=min(n_ctl, len(rejected)), replace=False) \
         if rejected else []
     control = [rejected[i] for i in idx]
@@ -252,6 +264,9 @@ def select(
 def render(sel: Selection, policy: Policy, top_k: int = 15) -> str:
     n = len(sel.selected) + len(sel.rejected)
     n_ex = sum(1 for s in sel.rejected if s.excluded)
+    # The actual fraction, not the target: on small pools the floor of one
+    # control chip makes them differ, and printing the target would lie.
+    ctl_frac = len(sel.control) / max(len(sel.rejected), 1)
     lines = [
         f"# S3 triage -- policy {policy.policy_id} (regime {policy.regime})",
         f"# query: {policy.query}",
@@ -261,8 +276,16 @@ def render(sel: Selection, policy: Policy, top_k: int = 15) -> str:
         f"hard-excluded        {n_ex} ({n_ex / max(n, 1):.0%})",
         f"selected (budget)    {len(sel.selected)} ({len(sel.selected) / max(n, 1):.0%})",
         f"control set          {len(sel.control)} "
-        f"({CONTROL_SET_FRACTION:.0%} of rejected -- MANDATORY, this is the only "
-        f"unbiased recall signal)",
+        f"({ctl_frac:.0%} of rejected, target {CONTROL_SET_FRACTION:.0%} -- "
+        f"MANDATORY, this is the only unbiased recall signal)",
+    ]
+    if 0 < len(sel.control) < CONTROL_MIN_INFORMATIVE:
+        lines.append(
+            f"# WARNING: a control set of {len(sel.control)} chip(s) estimates "
+            f"recall with very wide confidence intervals -- treat it as a smoke "
+            f"test, not a recall measurement (needs >= {CONTROL_MIN_INFORMATIVE})."
+        )
+    lines += [
         f"cost reduction       {sel.cost_reduction:.0%}",
         f"score captured       {sel.score_captured:.0%} of total prior mass",
         "",

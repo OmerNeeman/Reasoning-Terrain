@@ -36,15 +36,20 @@ class Vehicle:
     min_surface: float
     # How much wet ground degrades performance, 0 = unaffected.
     wet_sensitivity: float
+    # Physical width in metres. S5's corridor query uses it to reject
+    # passages narrower than the vehicle (single-pixel percolation paths).
+    # 0.0 = no width gate (foot). Guesses -- where these should come from:
+    # vehicle spec sheets, the same document that owns max_slope_deg.
+    width_m: float = 0.0
 
 
 VEHICLES = {
     "wheeled": Vehicle("wheeled", max_slope_deg=25.0, min_surface=0.45,
-                       wet_sensitivity=0.7),
+                       wet_sensitivity=0.7, width_m=2.5),
     "tracked": Vehicle("tracked", max_slope_deg=35.0, min_surface=0.20,
-                       wet_sensitivity=0.4),
+                       wet_sensitivity=0.4, width_m=3.5),
     "foot": Vehicle("foot", max_slope_deg=45.0, min_surface=0.05,
-                    wet_sensitivity=0.15),
+                    wet_sensitivity=0.15, width_m=0.0),
 }
 
 # Slope response: full score below SLOPE_FREE, zero at the vehicle limit.
@@ -58,6 +63,17 @@ WET_CLASSES = ("HydromorpicSoil", "ClayeyDeepSoil", "ClayeySoil", "Water",
 SHADOW_CONCEALMENT = 0.6
 BUILT_CONCEALMENT = 0.5      # adjacent to buildings/walls
 RELIEF_CONCEALMENT_WEIGHT = 0.25   # steep, broken ground hides things too
+
+# Window (px) over which slope roughness is measured for the relief term.
+# Where this should come from: the footprint of the object being hidden
+# divided by the GSD -- a fixed pixel count is only defensible at one GSD.
+ROUGHNESS_WINDOW_PX = 5
+
+# Window (metres) for the local relative elevation ("lowness") term in
+# drainage. Where this should come from: the drainage-basin scale of the
+# terrain -- roughly the hillslope length over which runoff converges. 200 m
+# is a guess for dissected Mediterranean terrain.
+DRAINAGE_LOCAL_WINDOW_M = 200.0
 
 # Fire fuel: canopy-driven, scaled by dryness of the class.
 DRY_CLASSES = ("DryGrassland", "Batha", "Garigue", "Maquis", "UnirrigatedOrchard")
@@ -97,6 +113,22 @@ def trafficability(raster: LabelRaster, vehicle: str = "wheeled",
     return score.astype(np.float32)
 
 
+def _local_std(arr: np.ndarray, size: int) -> np.ndarray:
+    """Local standard deviation over a size x size window.
+
+    Vectorised as sqrt(E[x^2] - E[x]^2) with two uniform_filter passes.
+    Numerically equivalent -- edges included, both replicate the border via
+    mode="nearest" -- to `ndi.generic_filter(arr, np.std, size, mode="nearest")`,
+    which invokes a Python callback per pixel and takes hours at mosaic scale.
+    """
+    a = arr.astype(np.float64)      # float32 E[x^2]-E[x]^2 cancels catastrophically
+    m = ndi.uniform_filter(a, size=size, mode="nearest")
+    m2 = ndi.uniform_filter(a * a, size=size, mode="nearest")
+    # Rounding can push the variance a hair below zero on flat ground; sqrt of
+    # that is NaN, so clamp.
+    return np.sqrt(np.maximum(m2 - m * m, 0.0))
+
+
 def concealment(raster: LabelRaster) -> np.ndarray:
     canopy = _per_class(lambda d: d.canopy)[raster.labels]
     score = canopy.copy()
@@ -107,7 +139,7 @@ def concealment(raster: LabelRaster) -> np.ndarray:
     score = np.maximum(score, near_built * BUILT_CONCEALMENT)
 
     slope = _slope(raster)
-    roughness = ndi.generic_filter(slope, np.std, size=5, mode="nearest") \
+    roughness = _local_std(slope, ROUGHNESS_WINDOW_PX) \
         if slope.any() else np.zeros_like(slope)
     if roughness.max() > 0:
         score += RELIEF_CONCEALMENT_WEIGHT * (roughness / roughness.max())
@@ -115,13 +147,26 @@ def concealment(raster: LabelRaster) -> np.ndarray:
 
 
 def drainage(raster: LabelRaster) -> np.ndarray:
-    """Where water pools. Naive: low ground + flat + a water-holding class."""
+    """Where water pools. Naive: locally low ground + flat + a water-holding class.
+
+    Lowness is LOCAL relative elevation, not a whole-raster normalisation: on a
+    mosaic spanning regional relief, a valley floor at high absolute elevation
+    is exactly where water accumulates, and `1 - (e - min)/ptp` scores it as
+    dry ridge simply because somewhere else in the AOI is lower.
+    """
     slope = _slope(raster)
     flat = np.clip(1.0 - slope / 10.0, 0.0, 1.0)
     holding = _mask_of(raster.labels, WET_CLASSES).astype(np.float32)
     if raster.dem is not None:
-        e = raster.dem.astype(np.float32)
-        low = 1.0 - (e - e.min()) / (np.ptp(e) + 1e-9)
+        e = raster.dem.astype(np.float64)
+        # Odd window so the neighbourhood is centred on the pixel.
+        window_px = max(3, int(round(DRAINAGE_LOCAL_WINDOW_M / raster.gsd)) | 1)
+        rel = ndi.uniform_filter(e, size=window_px, mode="nearest") - e
+        # rel > 0: below the local mean, i.e. accumulating. Normalise by a
+        # robust scale (p95 of |rel|) rather than the max, so one deep pit does
+        # not flatten every ordinary valley to ~0; clip keeps [0, 1].
+        scale = float(np.percentile(np.abs(rel), 95))
+        low = np.clip(rel / max(scale, 1e-9), 0.0, 1.0).astype(np.float32)
     else:
         low = np.full(raster.shape, 0.5, dtype=np.float32)
     return np.clip(0.45 * flat + 0.30 * low + 0.25 * holding, 0, 1).astype(np.float32)

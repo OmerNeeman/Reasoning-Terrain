@@ -261,16 +261,34 @@ def _corridor(q, rest, raster: LabelRaster, ridx: RegionIndex) -> QueryResult:
             raise QueryError(f"unexpected token {rest[i]!r}")
     if vehicle not in VEHICLES:
         raise QueryError(f"unknown vehicle {vehicle!r}; try {list(VEHICLES)}")
+    v = VEHICLES[vehicle]
 
     # via compute(), not trafficability() directly, so nodata scores 0 and the
     # corridor cannot bridge two real areas through unclassified ground.
     traf = compute(raster, "trafficability", vehicle=vehicle)
     passable = traf >= CORRIDOR_MIN_TRAFFIC
+
+    # 8-connected labeling is single-pixel percolation: two areas joined by one
+    # diagonal pixel (~half a metre at this GSD) would count as mutually
+    # reachable, and no vehicle passes a half-metre gap. Open the mask (erode
+    # then dilate, square element sized to the vehicle's width) so a corridor
+    # must be at least vehicle-wide end to end. Foot (width 0) keeps pure
+    # percolation, and the note always states which width was applied.
+    structure_px = max(1, round(v.width_m / raster.gsd))
+    if structure_px > 1:
+        st = np.ones((structure_px, structure_px), dtype=bool)
+        passable = ndi.binary_dilation(ndi.binary_erosion(passable, structure=st),
+                                       structure=st)
+        width_note = (f", passages narrower than the vehicle width {v.width_m} m "
+                      f"({structure_px} px opening) removed")
+    else:
+        width_note = f", vehicle width {v.width_m} m -- no minimum passage width applied"
+
     comp, n = ndi.label(passable, structure=np.ones((3, 3)))
     if n == 0:
         return QueryResult(q, "corridor", [], (), 0.0,
                            f"no ground passable to {vehicle} at threshold "
-                           f"{CORRIDOR_MIN_TRAFFIC}")
+                           f"{CORRIDOR_MIN_TRAFFIC}{width_note}")
 
     seed_mask = _class_mask(raster, seed)
     seed_ids = sorted(set(np.unique(comp[seed_mask]).tolist()) - {0})
@@ -283,23 +301,28 @@ def _corridor(q, rest, raster: LabelRaster, ridx: RegionIndex) -> QueryResult:
     # pixel a reviewer can go and look at.
     centres = ndi.center_of_mass(np.ones(comp.shape, dtype=np.uint8), comp,
                                  index=seed_ids) if seed_ids else []
-    rows, kept = [], []
+    rows, kept, dropped_m2 = [], [], 0.0
     for c, (cy, cx) in sorted(zip(seed_ids, centres), key=lambda t: -sizes[t[0]]):
         a = sizes[c] * px_m2
         if a < CORRIDOR_MIN_AREA_M2:
+            dropped_m2 += a
             continue
         rows.append((int(c), f"{a:.0f}", f"{a / total:.1%}", f"{cy:.0f}", f"{cx:.0f}"))
         kept.append(int(c))
 
     dropped = len(seed_ids) - len(kept)
-    reachable = sum(sizes[c] for c in seed_ids) * px_m2
+    # The headline scalar sums the KEPT components only: pockets dropped from
+    # the table as noise must not sit inside the number the table is supposed
+    # to substantiate. The note states what was excluded and how much.
+    reachable = sum(sizes[c] for c in kept) * px_m2
     note = (f"{reachable / total:.1%} of the classified area is reachable from {rest[0]} "
             f"without leaving ground passable to a {vehicle} vehicle "
             f"(threshold {CORRIDOR_MIN_TRAFFIC}, slope limit "
-            f"{VEHICLES[vehicle].max_slope_deg} deg)")
+            f"{v.max_slope_deg} deg{width_note})")
     if dropped:
-        note += (f"; {dropped} reachable pocket(s) below "
-                 f"{CORRIDOR_MIN_AREA_M2:.0f} m2 omitted as noise")
+        note += (f"; {dropped} reachable pocket(s) totalling {dropped_m2:.0f} m2 "
+                 f"below {CORRIDOR_MIN_AREA_M2:.0f} m2 excluded as noise from "
+                 f"the table and the headline figure")
     return QueryResult(
         q, f"corridor ({vehicle}, seeded from {rest[0]})", rows,
         ("component", "area_m2", "tile_frac", "cy", "cx"), reachable, note,
