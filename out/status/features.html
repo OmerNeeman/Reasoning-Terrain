@@ -1,0 +1,413 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>reasoning-terrain — feature status</title>
+<style>
+:root{--bg:#fbfaf8;--panel:#fff;--ink:#191817;--dim:#6a6660;--line:#e4dfd7;
+ --accent:#8a4b2a;--soft:#f4ece4;--ok:#2f6b3f;--warn:#8a6d1f;--bad:#96351f;
+ --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+@media(prefers-color-scheme:dark){:root{--bg:#15140f;--panel:#1d1c16;--ink:#ecebe5;
+ --dim:#9b968b;--line:#33312a;--accent:#d69b6b;--soft:#2a2620;--ok:#7fb98d;
+ --warn:#d6b96a;--bad:#e08f76}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font:16px/1.6 ui-serif,Georgia,"Times New Roman",serif}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 90px}
+header{border-bottom:1px solid var(--line);padding:42px 0 24px;margin-bottom:10px}
+h1{font:600 30px/1.2 ui-sans-serif,system-ui,sans-serif;margin:0 0 10px;letter-spacing:-.01em}
+.sub{font:13px/1.6 var(--mono);color:var(--dim)}
+.key{display:flex;gap:16px;flex-wrap:wrap;margin-top:16px;font-size:13.5px;color:var(--dim)}
+.key span{display:flex;gap:6px;align-items:center}
+nav.toc{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);
+ margin-bottom:34px;padding:11px 0;display:flex;gap:5px;flex-wrap:wrap}
+nav.toc a{font:12px var(--mono);color:var(--dim);text-decoration:none;padding:4px 10px;
+ border-radius:99px;border:1px solid transparent}
+nav.toc a:hover{color:var(--accent);border-color:var(--line);background:var(--panel)}
+section{margin:0 0 60px;scroll-margin-top:58px}
+h2{font:600 23px/1.25 ui-sans-serif,system-ui,sans-serif;margin:0 0 8px;
+ padding-bottom:9px;border-bottom:2px solid var(--line)}
+h2 .n{font:600 12px var(--mono);color:var(--dim);float:right;padding-top:9px}
+p.lead{font-size:17px;max-width:78ch;color:var(--dim);margin:0 0 22px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+ padding:18px 20px;margin-bottom:16px}
+.card>h3{font:600 17px ui-sans-serif,system-ui,sans-serif;margin:0 0 3px;
+ display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.card>h3 code{font:12px var(--mono);background:var(--soft);color:var(--accent);
+ padding:2px 7px;border-radius:4px}
+.card>.what{color:var(--dim);font-size:14.5px;margin:0 0 14px;max-width:82ch}
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px}
+@media(max-width:880px){.cols{grid-template-columns:1fr}}
+.col h4{font:600 11px ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;
+ letter-spacing:.09em;margin:0 0 8px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.col.built h4{color:var(--ok)}.col.gap h4{color:var(--bad)}.col.next h4{color:var(--accent)}
+.col ul{margin:0;padding-left:17px;font-size:14px}
+.col li{margin-bottom:7px}
+.col li b{font-weight:600}
+.pill{font:10.5px var(--mono);text-transform:uppercase;letter-spacing:.07em;
+ border-radius:99px;padding:3px 9px;border:1px solid var(--line);white-space:nowrap}
+.pill.ok{color:var(--ok);border-color:var(--ok)}
+.pill.part{color:var(--warn);border-color:var(--warn)}
+.pill.no{color:var(--bad);border-color:var(--bad)}
+.pill.new{color:#fff;background:var(--accent);border-color:var(--accent)}
+i.dot{width:9px;height:9px;border-radius:99px;display:inline-block}
+i.ok{background:var(--ok)}i.part{background:var(--warn)}i.no{background:var(--bad)}
+code{font:.85em var(--mono);background:var(--soft);padding:1px 5px;border-radius:3px}
+.callout{border:1px solid var(--line);border-left:3px solid var(--warn);
+ background:var(--soft);border-radius:6px;padding:14px 17px;margin:0 0 18px;font-size:15px}
+.callout.bad{border-left-color:var(--bad)}
+.callout.ok{border-left-color:var(--ok)}
+table.t{border-collapse:collapse;width:100%;font-size:14px;margin-bottom:18px;
+ display:block;overflow-x:auto}
+table.t th{text-align:left;font:600 11px ui-sans-serif,system-ui,sans-serif;
+ text-transform:uppercase;letter-spacing:.07em;color:var(--dim);
+ border-bottom:1px solid var(--line);padding:7px 10px;white-space:nowrap}
+table.t td{border-bottom:1px solid var(--line);padding:8px 10px;vertical-align:top}
+table.t td.c{text-align:center}
+ol.road{counter-reset:r;list-style:none;padding:0;margin:0}
+ol.road li{counter-increment:r;position:relative;padding:14px 0 14px 52px;
+ border-bottom:1px solid var(--line)}
+ol.road li:before{content:counter(r);position:absolute;left:0;top:14px;
+ width:32px;height:32px;border-radius:99px;background:var(--accent);color:#fff;
+ font:600 14px var(--mono);display:flex;align-items:center;justify-content:center}
+ol.road b{display:block;font:600 16px ui-sans-serif,system-ui,sans-serif;margin-bottom:3px}
+ol.road span{color:var(--dim);font-size:14.5px}
+footer{border-top:1px solid var(--line);padding-top:20px;color:var(--dim);font-size:13.5px}
+</style></head><body><div class="wrap">
+<header>
+<h1>Feature status — what is built, what is missing, what is next</h1>
+<div class="sub">reasoning-terrain (RT) · branch <code>eval/live-ask-round1</code> · 2026-08-26</div>
+<div class="key">
+<span><i class="dot ok"></i> built and exercised on real data</span>
+<span><i class="dot part"></i> built, unvalidated or partial</span>
+<span><i class="dot no"></i> not built / blocked</span>
+</div>
+</header>
+<nav class="toc">
+<a href="#new">Built this session</a><a href="#s1">S1</a><a href="#s2">S2</a>
+<a href="#s3">S3</a><a href="#s4">S4</a><a href="#s5">S5</a><a href="#s6">S6</a>
+<a href="#blockers">Cross-cutting</a><a href="#road">What to do next</a>
+</nav>
+
+<section id="new">
+<h2>Built this session <span class="n">3 features</span></h2>
+<p class="lead">All three are new. None of them calls a language model.</p>
+
+<div class="card">
+<h3><span class="pill new">new</span> Interactive demo UI <code>segmap ui</code></h3>
+<p class="what">A local page for driving the whole repo by hand: the colourised map
+and legend on the left, three tabs on the right. The raster and both indices load
+once at startup, so a question costs a second instead of the ~50 s an index build
+costs.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li><b>Verbs tab</b> — S5 query language driven by hand, with example chips. Every answer carries its region ids.</li>
+<li><b>Solutions tab</b> — S1–S6 as cards with their real options, output rendered exactly as the CLI renders it.</li>
+<li><b>Ask tab</b> — the tool-call log renders directly beneath the prose, so a claim and its evidence are read together.</li>
+<li>Degrades honestly: no key returns the actionable message, not a traceback; S6 explains it has no second date.</li>
+<li>Stdlib <code>http.server</code>, zero new dependencies, verified end-to-end on every endpoint.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b>No map interaction.</b> The preview is a static PNG — you cannot click a region to get its id, pan, or zoom.</li>
+<li><b>No raster switching.</b> The tile is fixed at launch; changing it means restarting the server.</li>
+<li>No file upload — you need shell access to point it at a raster.</li>
+<li>Results are not exportable from the page (no CSV / GeoJSON download).</li>
+<li>Single-user by construction: one global lock, no auth, localhost only.</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li><b>Click-to-identify</b> on the preview → region id, class, area, neighbours. Cheapest large win.</li>
+<li>Overlay the answer on the map — highlight the ids a verb returned instead of listing them as text.</li>
+<li>A raster picker that indexes in the background with a progress line.</li>
+<li>Download button per result, wired to the GeoJSON export below.</li>
+</ul></div>
+</div></div>
+
+<div class="card">
+<h3><span class="pill new">new</span> Illustrated report generator <code>segmap showcase</code></h3>
+<p class="what">One self-contained HTML page per raster — 24 images base64-inlined,
+no sidecar directory — explaining all six solutions and illustrating each from the
+file it was pointed at. About a minute on a 67 Mpx tile with a warm cache.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li>Overview, class legend, and <b>class isolations</b> on a ghosted basemap (roads / built / vehicles / rock / vegetation series).</li>
+<li><b>Full-res detail crops</b>, auto-located on the densest window per group — finds the settlement without being told where it is.</li>
+<li>All four S4 products plus a dry-vs-wet difference map; the <code>corridor</code> passable-ground raster.</li>
+<li>S1 findings <b>boxed on the map</b> beside the cause table; S3 triage drawn as dispatched-vs-control chips.</li>
+<li>Per-solution algorithm walkthrough, worked examples, and where each one abstains.</li>
+<li><b>Verified on two different rasters</b> — different GSD, different class mapping.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b>S6 is explained but never demonstrated</b> — no second date exists for any tile.</li>
+<li>Static output: no zoom, no toggling a class on and off.</li>
+<li>Reference object sizes for the <code>count</code> check are hard-coded for House/Car/BrickWall only.</li>
+<li>No PDF or print stylesheet.</li>
+<li>Regenerating is all-or-nothing; no per-section rebuild.</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li>Emit the S1 findings and S5 answers as <b>GeoJSON</b> alongside the page, so they open in QGIS.</li>
+<li>Side-by-side mode for two rasters — the natural home for S6 once a second date lands.</li>
+<li>Let the class-isolation groups be configured rather than hard-coded.</li>
+</ul></div>
+</div></div>
+
+<div class="card">
+<h3><span class="pill new">new</span> S5 live evaluation harness <code>out/live_ask/</code></h3>
+<p class="what">The round-trip check S5's docs called for: ten analyst questions,
+offline ground truth first, then the model, then grade the model against the
+truth. Two model configurations side by side.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li>Ten questions covering all six verbs plus three designed refusals and one uncovered case.</li>
+<li><b>Offline ground truth computed and saved</b> for every quantitative question.</li>
+<li>Runner script parameterised by model and effort; raw output captured per question.</li>
+<li>Confirmed the <b>code half of the refusal contract</b>: vehicle type, building function, and slope-without-DEM all abstain with a reason rather than returning zero.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b class="pill no">blocked</b> The model half never ran — the API key is 20 characters where a real one is ~100. All 20 calls returned 401.</li>
+<li>So: no verdict on whether the planner plans, and none on whether the model <i>relays</i> a refusal instead of substituting a near-miss class.</li>
+<li>No golden-set test — grading is manual, not a CI check.</li>
+<li>Grading rubric does not yet handle model-side arithmetic (see Q3 below).</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li><b>Drop in a valid key and re-run</b> — two commands, index is cached, everything else is staged.</li>
+<li>Promote the ground truth to a <b>golden-set pytest</b>, so the arithmetic is checked on every commit for free.</li>
+<li>Decide the Q3 rule: add a <code>ratio</code> verb, or permit arithmetic over quoted tool outputs.</li>
+</ul></div>
+</div></div>
+</section>
+
+<section id="s1">
+<h2>S1 — Consistency audit <span class="n">built · unvalidated</span></h2>
+<div class="card">
+<p class="what">Flags labels contradicting their context, slope or geometry; rolls
+thousands of flags into the handful of distinct facts they instance; ranks by
+what a reviewer's next minute is worth. On the demo tile: 2,710 findings → 62
+root causes.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li>Five check families, severity graded from evidence rather than a constant.</li>
+<li><b>Roll-up to root causes</b> with example region ids — the thing that makes 2,710 rows reviewable.</li>
+<li>Ranking by severity × area<sup>0.5</sup>.</li>
+<li><b>Coverage block printed first</b>, stating that an unchecked class is unexamined rather than clean.</li>
+<li>Abstains on slope and aspect rather than scoring against a fabricated 0.0.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b>False-positive rate is unknown.</b> Every count is a candidate count — this is the blocking question.</li>
+<li><code>class_distance</code> does no work in the speck check: it returns 1.0 for every cross-superclass pair, so the check is effectively "small + enclosed".</li>
+<li><b>Coverage is 2.0% of area</b> on this tile — nothing to say about Rendzina, which is 65% of it.</li>
+<li>Severity is not calibrated across kinds.</li>
+<li>Connected components fragment badly; a boundary wobble makes two findings where a human sees one.</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li><b>Review ~50 causes by hand</b> → a precision number. Cheapest unblock in the repo.</li>
+<li>Attach a DEM — activates the two abstaining check families at a stroke.</li>
+<li>Give <code>class_distance</code> a notion of <i>compatible</i> classes (grass on soil is not a contradiction). <b>Not</b> by adding a prior.</li>
+</ul></div>
+</div></div></section>
+
+<section id="s2">
+<h2>S2 — Confusion adjudication <span class="n">built · placeholder scoring</span></h2>
+<div class="card">
+<p class="what">Answers "then what is it?" for a flagged region by scoring a
+candidate list on three evidence terms — and refusing when the evidence cannot
+separate them. The refusal is designed to fire often.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li>Three-term scoring: context, morphology, geometry — each with its note.</li>
+<li>A <b>0.15 margin</b> before a SWITCH; inside it, KEEP or UNDECIDABLE, never a coin flip.</li>
+<li><code>UNDECIDABLE-NEEDS-geological-map</code> as a first-class verdict.</li>
+<li>Full candidate table shown, so the verdict can be argued with.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b>Hand-set weights.</b> A placeholder for a calibrated model.</li>
+<li><b>The segmenter's own confidence is absent</b> — highest-value missing input.</li>
+<li>Shortlist recall unmeasured: if the truth is off the list, no weighting saves you.</li>
+<li>UNDECIDABLE only triggers on lithology; terra rossa vs clay is arguably as unresolvable.</li>
+<li><b>Nothing writes back.</b> An accepted SWITCH goes nowhere.</li>
+<li>Cannot express "split this region", which is sometimes the right answer.</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li>Get a <b>validation confusion matrix</b> — replaces taxonomy-derived candidates with measured ones.</li>
+<li>~500 adjudicated regions → logistic regression, which gives the calibrated probability the margin actually needs.</li>
+<li>Decide the write-back path: raster edit, correction layer, or review queue.</li>
+</ul></div>
+</div></div></section>
+
+<section id="s3">
+<h2>S3 — Cost-aware detection triage <span class="n">built · no outcome data</span></h2>
+<div class="card">
+<p class="what">Uses the cheap segmentation as a prior to decide which chips get an
+expensive detector. The model compiles a policy once; a deterministic scorer
+applies it per chip. 95% cost reduction on the demo tile.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li>Three policies (vehicles / structures / oov), checked in and human-readable.</li>
+<li>Pure-arithmetic scoring over the precomputed chip index — milliseconds over millions.</li>
+<li>Hard-exclude list with a written rationale.</li>
+<li><b>Mandatory control set</b> sampled from rejected chips — the only unbiased recall signal there is.</li>
+<li>Refuses to let "score captured" stand in for recall, in capitals.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b>No recall number</b>, because no detector has run on the control set.</li>
+<li><b><code>budget_frac</code> is the wrong knob</b> — top-K is a placeholder for a recall target.</li>
+<li>The detector's cost model is unknown (per call? per megapixel?), which changes optimal chip packing entirely.</li>
+<li>No spatial diversity guard — the whole budget can collapse onto one settlement.</li>
+<li>Policy versioning is designed but not enforced; a stale policy fails silently.</li>
+<li>Never compared against the LLM-generated policy, though the baseline is checked in and ready.</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li><b>Run any detector on the control set.</b> Unblocks the recall number, the isotonic selector, and the whole cost argument at once.</li>
+<li>Ask the detector owner for the cost model before optimising anything.</li>
+<li>Cheap and testable today: LLM policy vs hand-written baseline.</li>
+</ul></div>
+</div></div></section>
+
+<section id="s4">
+<h2>S4 — Derived decision products <span class="n">built · units undecided</span></h2>
+<div class="card">
+<p class="what">47 classes + slope + season → the raster someone actually asked
+for. Authored with a model, evaluated deterministically. No LLM at runtime.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li>Four products: trafficability, concealment, drainage, fire_fuel.</li>
+<li>Vehicle (wheeled / tracked / foot) and season modifiers.</li>
+<li>Slope and roughness penalties where a DEM exists; vectorised.</li>
+<li>Summary by superclass, so the shape of the answer is legible before opening the image.</li>
+<li>PNG export.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b>Is 0–1 even the right output?</b> A float with no units is hard to argue with and hard to validate. GO / SLOW-GO / NO-GO, or km/h, may be what is wanted.</li>
+<li><b>Nobody owns the numbers.</b> Trafficability is a vehicle × doctrine × risk decision, not a physical constant.</li>
+<li><code>--wet</code> is a binary switch, not a moisture model.</li>
+<li>DEM resolution and smoothing window are free parameters nobody has set.</li>
+<li><b>Line-of-sight is absent</b> — the most-requested product.</li>
+<li>No composition rule for "concealed <i>and</i> trafficable", which is the real question.</li>
+<li>No ground-truth path for validation.</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li><b>Settle the output format with whoever consumes it</b> before tuning a single constant.</li>
+<li>Name an owner for the doctrine numbers.</li>
+<li>Add LOS once a DEM exists — it needs a viewshed, not a class lookup.</li>
+</ul></div>
+</div></div></section>
+
+<section id="s5">
+<h2>S5 — Natural-language querying <span class="n">verbs solid · planner untested</span></h2>
+<div class="card">
+<p class="what">Six verbs answering quantitative questions in code, so no model
+ever does arithmetic over a big table. The verbs are the tool surface a model is
+given — having them exist first is what keeps the model out of the numbers.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li>Six verbs: <code>describe</code>, <code>find</code>, <code>count</code>, <code>area</code>, <code>distance</code>, <code>corridor</code>.</li>
+<li><code>distance</code> is true pixel-to-pixel and <b>returns both endpoints</b>, so it is checkable on the map.</li>
+<li><b>Evidence in every result</b> — the region or component ids it was computed from.</li>
+<li>Four distinct statuses: <code>ok</code>, <code>empty</code> (a measured zero), <code>unanswerable</code>, <code>error</code>.</li>
+<li>Refusals enforced in code, not trusted to the prompt.</li>
+<li>Typed Anthropic tool definitions, prompt-cache-friendly ordering.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b class="pill no">untested</b> The planner. Not one live call has succeeded — the key is invalid.</li>
+<li><b><code>count</code> does not count objects on every map.</b> Measured: the largest House component on the demo tile holds 64% of all House area — one settlement, one "building".</li>
+<li><b>No arithmetic verb.</b> "How does dirt compare to paved" forces the model to divide, producing a number no tool returned.</li>
+<li><b>Pixel coordinates only.</b> No lat/lon or GeoJSON — ids are checkable against the index but not against anyone's map.</li>
+<li><code>near</code> is still centroid-based; <code>distance</code> already does it properly.</li>
+<li>Single-tile only. No AOI-wide query.</li>
+<li>No check that the ids the model <i>quotes</i> are the ids the tool <i>returned</i>.</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li><b>Valid key → run the round trip.</b> Everything else here is downstream of knowing whether the planner works.</li>
+<li><b>GeoJSON export.</b> The largest gap in the evidence story, and it unblocks <code>between</code> and <code>along</code>.</li>
+<li>Reimplement <code>near</code> on top of <code>distance</code> — a small, obvious fix.</li>
+<li>Report <code>count</code> alongside implied-by-area whenever fusion is detected.</li>
+</ul></div>
+</div></div></section>
+
+<section id="s6">
+<h2>S6 — Change reasoning <span class="n">built · never run on real pairs</span></h2>
+<div class="card">
+<p class="what">Classifies each transition between two dates, because the same raw
+pixel difference means completely different things. A pixel diff is mostly noise
+and phenology; the value is in the categories.</p>
+<div class="cols">
+<div class="col built"><h4>Built</h4><ul>
+<li>Transition taxonomy: phenology, succession, construction, impossible.</li>
+<li>Diffs <b>co-valid pixels only</b> — nodata on either date is not a change.</li>
+<li>Guards multi-stage succession jumps as classifier disagreement, not regrowth.</li>
+<li>One-pass component counting per class pair.</li>
+</ul></div>
+<div class="col gap"><h4>Missing</h4><ul>
+<li><b class="pill no">blocked</b> No second date exists for any tile — never run on a real pair.</li>
+<li><b>Co-registration is assumed and it will not hold.</b> A one-pixel shift creates a halo of fake transitions along every region edge. Single biggest threat to S6 being useful.</li>
+<li>Cannot tell two <i>dates</i> from two <i>model versions</i> — retraining would read as change.</li>
+<li>Phenology is two hard-coded pairs, with no acquisition date or rainfall as input.</li>
+<li><b>Transitions are aggregated, not localised</b> — a table, where users want change polygons.</li>
+</ul></div>
+<div class="col next"><h4>Next</h4><ul>
+<li><b>Get one second-date raster.</b> Everything here is theory until then, and every <code>impossible</code> transition it finds is free ground truth for S1.</li>
+<li>Log the segmenter version per raster — cheap now, impossible retroactively.</li>
+<li>Erode boundaries before diffing, or require change components to be interior.</li>
+</ul></div>
+</div></div></section>
+
+<section id="blockers">
+<h2>Cross-cutting — what blocks the most at once</h2>
+<p class="lead">Ordered by how many solutions each one unblocks.</p>
+<table class="t"><thead><tr><th>Missing input</th><th>S1</th><th>S2</th><th>S3</th>
+<th>S4</th><th>S5</th><th>S6</th><th>What it changes</th></tr></thead><tbody>
+<tr><td><b>A DEM</b></td><td class="c">●</td><td class="c">●</td><td class="c">·</td>
+<td class="c">●</td><td class="c">●</td><td class="c">·</td>
+<td>Activates S1's two abstaining check families, lets S2 score morphology at all,
+makes S4's slope penalty real, and turns S5's slope filter from <i>unanswerable</i>
+into an answer. The single biggest upgrade available.</td></tr>
+<tr><td><b>A valid API key</b></td><td class="c">·</td><td class="c">·</td><td class="c">○</td>
+<td class="c">·</td><td class="c">●</td><td class="c">·</td>
+<td>The only thing standing between S5 and its first measured planner result. Nothing
+else in the repo needs one.</td></tr>
+<tr><td><b>Detector outcomes</b></td><td class="c">·</td><td class="c">·</td><td class="c">●</td>
+<td class="c">·</td><td class="c">·</td><td class="c">·</td>
+<td>Turns S3's cost reduction from a number into an argument, and replaces
+<code>budget_frac</code> with a recall target.</td></tr>
+<tr><td><b>A confusion matrix</b></td><td class="c">●</td><td class="c">●</td><td class="c">·</td>
+<td class="c">·</td><td class="c">·</td><td class="c">·</td>
+<td>Replaces S2's guessed candidate lists with measured ones and gives S1 a
+false-positive baseline.</td></tr>
+<tr><td><b>A second date</b></td><td class="c">○</td><td class="c">·</td><td class="c">·</td>
+<td class="c">·</td><td class="c">·</td><td class="c">●</td>
+<td>Makes S6 real. Every <code>impossible</code> transition is free ground truth for S1.</td></tr>
+<tr><td><b>Georeferenced output</b></td><td class="c">○</td><td class="c">·</td><td class="c">·</td>
+<td class="c">○</td><td class="c">●</td><td class="c">○</td>
+<td>Region ids are checkable against the index but not against anyone's map. Blocks
+<code>between</code>, <code>along</code>, and any QGIS handoff.</td></tr>
+</tbody></table>
+<div class="callout bad"><b>One known-failing test, recorded not fixed.</b>
+<code>test_real_raster.py::test_nodata_is_not_trafficable</code> expects
+<code>100.0%</code> and gets <code>0.0%</code>: the fixture's whole reachable area
+is 200 m², below the 500 m² noise floor, so the floor swallows the entire answer
+while the note still reports the pocket. It lands on <code>corridor</code>, which
+is the verb behind the headline trafficability figure.</div>
+<div class="callout"><b>Two standing caveats on every number produced so far.</b>
+No DEM on any tile — every slope and aspect is <i>unmeasured</i>, not zero. And the
+aza tile uses a borrowed class mapping; the sinai tile carries its own
+<code>ID_TO_LABEL_MAPPING</code> tag and does not.</div>
+</section>
+
+<section id="road">
+<h2>Suggested order of work</h2>
+<p class="lead">Roughly by value per unit of effort, cheapest first.</p>
+<ol class="road">
+<li><b>Replace the API key and re-run the S5 round trip</b><span>Two commands; everything is staged and the index is cached. It is the only thing standing between the planner and its first measured result — and the refusal-relay behaviour is the highest-risk unknown in the repo.</span></li>
+<li><b>Promote the ground truth to a golden-set pytest</b><span>The offline answers are already computed and saved. Turning them into assertions makes the arithmetic checked on every commit, for free.</span></li>
+<li><b>Review ~50 S1 causes by hand</b><span>Produces the false-positive rate, which is the blocking question for S1 and a baseline for S2. The roll-up is what makes this a morning's work instead of a month's.</span></li>
+<li><b>Attach a DEM</b><span>Unblocks four of the six solutions at once. Worth more than RGB for this taxonomy — dip slope, terrace, badlands and boulder are all morphology.</span></li>
+<li><b>Add GeoJSON export</b><span>The largest gap in the evidence story. Makes every answer checkable on a real map and unblocks the next two S5 verbs.</span></li>
+<li><b>Run any detector over S3's control set</b><span>Converts a claimed 95% cost reduction into a defensible one, and replaces the placeholder budget knob with a recall target.</span></li>
+<li><b>Decide S4's output units with its consumer</b><span>Cheap, and it invalidates tuning work if left until after.</span></li>
+<li><b>Obtain one second-date raster</b><span>Makes S6 real, and pays S1 back in free ground truth.</span></li>
+</ol>
+</section>
+
+<footer>
+Status as of 2026-08-26 on branch <code>eval/live-ask-round1</code> (3 commits, unpushed).
+Companion pages: <code>out/showcase/*.html</code> for what the solutions produce,
+<code>out/live_ask/SUMMARY.md</code> for the evaluation record.
+</footer>
+</div></body></html>
