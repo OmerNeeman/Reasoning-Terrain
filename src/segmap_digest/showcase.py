@@ -897,23 +897,32 @@ answer.</p>
 _SHELL = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=IBM+Plex+Serif:wght@400;600&display=swap">
 <title>reasoning-terrain — {title}</title>
 <style>
 :root{{
-  --bg:#fbfaf8; --panel:#fff; --ink:#191817; --dim:#6a6660; --line:#e4dfd7;
-  --accent:#8a4b2a; --soft:#f4ece4; --ok:#2f6b3f; --warn:#8a6d1f; --bad:#96351f;
-  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --bg:#f7f8f9; --panel:#ffffff; --ink:#14181d; --dim:#5d6772; --line:#dde2e7;
+  --accent:#2f5d7c; --soft:#eaeff3; --ok:#2c7a52; --warn:#8a6320; --bad:#a33b2a;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",var(--sans);
+  --serif:"IBM Plex Serif",ui-serif,Georgia,"Times New Roman",serif;
 }}
-@media (prefers-color-scheme:dark){{:root{{
-  --bg:#15140f; --panel:#1d1c16; --ink:#ecebe5; --dim:#9b968b; --line:#33312a;
-  --accent:#d69b6b; --soft:#2a2620; --ok:#7fb98d; --warn:#d6b96a; --bad:#e08f76;
+@media (prefers-color-scheme:dark){{:root:not([data-theme="light"]){{
+  --bg:#0f1418; --panel:#161d23; --ink:#e6ecf2; --dim:#8b97a3; --line:#26303a;
+  --accent:#7fb3d5; --soft:#1b242c; --ok:#6fc79a; --warn:#d9ae62; --bad:#e89078;
 }}}}
+:root[data-theme="dark"]{{
+  --bg:#0f1418; --panel:#161d23; --ink:#e6ecf2; --dim:#8b97a3; --line:#26303a;
+  --accent:#7fb3d5; --soft:#1b242c; --ok:#6fc79a; --warn:#d9ae62; --bad:#e89078;
+}}
 *{{box-sizing:border-box}}
 body{{margin:0;background:var(--bg);color:var(--ink);
- font:16px/1.65 ui-serif,Georgia,"Times New Roman",serif}}
+ font:16px/1.65 var(--serif)}}
 .wrap{{max-width:1140px;margin:0 auto;padding:0 24px 100px}}
 header{{border-bottom:1px solid var(--line);margin-bottom:8px;padding:44px 0 26px}}
-header h1{{font:600 30px/1.2 ui-sans-serif,system-ui,sans-serif;margin:0 0 12px;
+header h1{{font:600 30px/1.2 var(--sans);margin:0 0 12px;
  letter-spacing:-.01em}}
 header .sub{{font:13px/1.6 var(--mono);color:var(--dim);word-break:break-all}}
 .pills{{margin-top:14px;display:flex;gap:8px;flex-wrap:wrap}}
@@ -929,12 +938,12 @@ nav.toc a{{font:12px var(--mono);color:var(--dim);text-decoration:none;
  padding:4px 10px;border-radius:99px;border:1px solid transparent}}
 nav.toc a:hover{{color:var(--accent);border-color:var(--line);background:var(--panel)}}
 section{{margin:0 0 68px;scroll-margin-top:60px}}
-h2{{font:600 24px/1.25 ui-sans-serif,system-ui,sans-serif;margin:0 0 14px;
+h2{{font:600 24px/1.25 var(--sans);margin:0 0 14px;
  padding-bottom:9px;border-bottom:2px solid var(--line);letter-spacing:-.01em}}
 h2 span{{display:inline-block;font:600 12px var(--mono);color:#fff;
  background:var(--accent);border-radius:4px;padding:3px 8px;
  vertical-align:3px;margin-right:10px;letter-spacing:.04em}}
-h4{{font:600 13px ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;
+h4{{font:600 13px var(--sans);text-transform:uppercase;
  letter-spacing:.08em;color:var(--dim);margin:30px 0 12px}}
 p{{margin:0 0 14px}}
 p.lead{{font-size:17px;max-width:74ch}}
@@ -957,7 +966,7 @@ ol.steps li{{margin-bottom:9px;max-width:80ch}}
 figure{{margin:0}}
 figure img{{width:100%;display:block;border:1px solid var(--line);border-radius:6px;
  background:#fff;image-rendering:pixelated}}
-figcaption{{font:13px/1.55 ui-sans-serif,system-ui,sans-serif;color:var(--dim);
+figcaption{{font:13px/1.55 var(--sans);color:var(--dim);
  margin-top:9px}}
 figcaption b{{color:var(--ink)}}
 .gallery{{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));

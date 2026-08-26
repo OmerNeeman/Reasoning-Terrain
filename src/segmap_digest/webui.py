@@ -342,20 +342,28 @@ def serve(raster, ridx, cidx, *, input_path, classes, dem, cache,
 PAGE = r"""<!doctype html>
 <meta charset="utf-8">
 <title>reasoning-terrain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&display=swap">
 <style>
 :root{
-  --bg:#fbfaf8; --panel:#fff; --ink:#1a1a1a; --dim:#6b6b6b; --line:#e2ddd6;
-  --accent:#8a4b2a; --accent-soft:#f2e9e2; --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  --ok:#2f6b3f; --warn:#8a6d1f; --bad:#96351f;
+  --bg:#f7f8f9; --panel:#ffffff; --ink:#14181d; --dim:#5d6772; --line:#dde2e7;
+  --accent:#2f5d7c; --soft:#eaeff3; --ok:#2c7a52; --warn:#8a6320; --bad:#a33b2a;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --serif:"IBM Plex Serif",ui-serif,Georgia,"Times New Roman",serif;
 }
-@media (prefers-color-scheme:dark){:root{
-  --bg:#16150f; --panel:#1e1d17; --ink:#eceae4; --dim:#9a958a; --line:#33312a;
-  --accent:#d59a6a; --accent-soft:#2b2620;
-  --ok:#7fb98d; --warn:#d6b96a; --bad:#e08f76;
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1418; --panel:#161d23; --ink:#e6ecf2; --dim:#8b97a3; --line:#26303a;
+  --accent:#7fb3d5; --soft:#1b242c; --ok:#6fc79a; --warn:#d9ae62; --bad:#e89078;
 }}
+:root[data-theme="dark"]{
+  --bg:#0f1418; --panel:#161d23; --ink:#e6ecf2; --dim:#8b97a3; --line:#26303a;
+  --accent:#7fb3d5; --soft:#1b242c; --ok:#6fc79a; --warn:#d9ae62; --bad:#e89078;
+}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+  font:15px/1.55 var(--sans)}
 header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;
   gap:18px;align-items:baseline;flex-wrap:wrap;background:var(--panel)}
 header h1{font-size:15px;margin:0;letter-spacing:.02em}
