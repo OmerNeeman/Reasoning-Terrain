@@ -293,13 +293,26 @@ ROAD_SERIES: tuple[str, ...] = ("DirtRoadB", "DirtRoad", "PavedRoad")
 
 def class_distance(a: int, b: int) -> float:
     """0.0 = same class, 1.0 = maximally different. Ordinal series get credit for
-    being near-misses; cross-superclass confusions do not."""
+    being near-misses; cross-superclass confusions do not.
+
+    Every ordinal series shares one deliberate scale:
+
+        distance = 0.75 * |i - j| / (len(series) - 1)
+
+    so the maximum in-series distance is 0.75 for EVERY series -- adjacent steps
+    are 0.25 on the 4-stage vegetation series and 0.375 on the 3-grade road
+    series -- and stays strictly below the 1.0 cross-superclass maximum: the two
+    ends of a series are still more alike than a road and a rock. (Normalising
+    by len(series), as this used to, made the scale depend on series length:
+    vegetation maxed at 0.75 but roads at 0.667, undocumented.) Downstream
+    thresholds are calibrated against this scale: S1's SPECK_MIN_CLASS_DISTANCE
+    (0.70), S2's CANDIDATE_MAX_DISTANCE (0.5), S6's noise gate (0.4)."""
     if a == b:
         return 0.0
     na, nb = BY_ID[a].name, BY_ID[b].name
     for series in (DEGRADATION_SERIES, ROAD_SERIES):
         if na in series and nb in series:
-            return abs(series.index(na) - series.index(nb)) / len(series)
+            return 0.75 * abs(series.index(na) - series.index(nb)) / (len(series) - 1)
     da, db = BY_ID[a], BY_ID[b]
     if da.lithology and db.lithology:
         if da.lithology == db.lithology:

@@ -42,6 +42,20 @@ SWITCH_MARGIN = 0.15
 # separate them -- emit UNDECIDABLE instead of a coin flip.
 UNDECIDABLE_MARGIN = 0.08
 
+# Ceiling on how far a SATISFIED slope band can lift the morphology score above
+# the 0.5 neutral (the actual lift is this times the band's specificity, see
+# _morphology_score). 0.4, not 0.5, so that W_MORPHOLOGY * bonus < SWITCH_MARGIN:
+# a satisfied constraint alone -- context and geometry equal -- can never flip a
+# label. A VIOLATED constraint, decaying towards 0.0, still can. The asymmetry
+# is deliberate: satisfaction is weak evidence for, violation strong evidence
+# against, and the cost of a corruption exceeds the value of a correction.
+SATISFIED_MAX_BONUS = 0.4
+assert W_MORPHOLOGY * SATISFIED_MAX_BONUS < SWITCH_MARGIN, \
+    "a satisfied morphology band alone must not be able to clear the switch margin"
+
+# Full range of the slope input, degrees. A band this wide constrains nothing.
+SLOPE_RANGE_DEG = 90.0
+
 # Expected slope band per morphology, degrees. Coarse, and the biggest single
 # source of error in this module.
 MORPHOLOGY_SLOPE = {
@@ -153,12 +167,30 @@ def _morphology_score(r: Region, cand: int,
         # rather than adjudicating on a constant.
         return 0.5, ["morphology unscored: no DEM, slope and aspect unmeasured"]
     notes = []
-    lo, hi = MORPHOLOGY_SLOPE.get(d.morphology, (0.0, 90.0))
+    lo, hi = MORPHOLOGY_SLOPE.get(d.morphology, (0.0, SLOPE_RANGE_DEG))
+    # A satisfied band is evidence in proportion to how SPECIFIC the band is:
+    # a 0-20 deg band containing a 3 deg slope has said almost nothing, a 0-6
+    # deg terrace band containing it has said a lot. So the score is
+    #     0.5 + SATISFIED_MAX_BONUS * specificity,
+    #     specificity = 1 - band_width / 90 (the full slope range),
+    # which makes an unconstrained (0-90) morphology score exactly the 0.5
+    # neutral a no-morphology candidate gets -- HAVING a satisfiable constraint
+    # is not evidence by itself. (The previous flat 1.0 handed every rock class
+    # whose wide band happened to contain the slope a free +0.5*W_MORPHOLOGY
+    # over every soil/vegetation candidate, larger than SWITCH_MARGIN.)
+    specificity = 1.0 - (hi - lo) / SLOPE_RANGE_DEG
+    satisfied = 0.5 + SATISFIED_MAX_BONUS * specificity
     if lo <= r.mean_slope <= hi:
-        score = 1.0
+        score = satisfied
+        if specificity > 0.0:
+            notes.append(f"slope {r.mean_slope:.1f} deg fits {lo}-{hi} for "
+                         f"{d.morphology} (band specificity {specificity:.2f})")
     else:
+        # Same 1/15-per-degree decay as before, but anchored at the satisfied
+        # score rather than at 1.0: a slope just outside the band must never
+        # outscore one inside it.
         miss = min(abs(r.mean_slope - lo), abs(r.mean_slope - hi))
-        score = max(0.0, 1.0 - miss / 15.0)
+        score = max(0.0, satisfied - miss / 15.0)
         notes.append(f"slope {r.mean_slope:.1f} deg outside {lo}-{hi} for {d.morphology}")
 
     if d.morphology in COHERENT_FACET:
@@ -207,19 +239,27 @@ def adjudicate(ridx: RegionIndex, region_id: int) -> Adjudication:
     top_name, top_ev = ranked[0]
     inc_ev = next(ev for n, ev in ranked if n == incumbent)
 
-    # Do the leading candidates differ only by lithology? Then RGB and geometry
-    # cannot separate them, and neither can we.
-    if len(ranked) > 1:
-        a, b = BY_ID[cid(ranked[0][0])], BY_ID[cid(ranked[1][0])]
-        close = abs(ranked[0][1].total - ranked[1][1].total) < UNDECIDABLE_MARGIN
-        if close and a.lithology and b.lithology and a.lithology != b.lithology \
-                and a.morphology == b.morphology:
-            return Adjudication(
-                region_id, incumbent, ranked, "UNDECIDABLE-NEEDS-geological-map",
-                f"{a.name} and {b.name} differ only by lithology and score within "
-                f"{UNDECIDABLE_MARGIN}; this separation is not present in the "
-                f"segmentation, the DEM, or the imagery. A geological map settles it.",
-            )
+    # Do any of the leading candidates differ only by lithology? Then RGB and
+    # geometry cannot separate them, and neither can we. Scan every pair in
+    # the near-top set, not just ranks 1 and 2: an unrelated candidate wedged
+    # between two lithology twins does not make them any more decidable.
+    # Every member of the set is within UNDECIDABLE_MARGIN of the leader, so
+    # every pair in it is within the margin of each other as well.
+    near_top = [n for n, ev in ranked
+                if ranked[0][1].total - ev.total < UNDECIDABLE_MARGIN]
+    for i, name_a in enumerate(near_top):
+        a = BY_ID[cid(name_a)]
+        for name_b in near_top[i + 1:]:
+            b = BY_ID[cid(name_b)]
+            if a.lithology and b.lithology and a.lithology != b.lithology \
+                    and a.morphology == b.morphology:
+                return Adjudication(
+                    region_id, incumbent, ranked, "UNDECIDABLE-NEEDS-geological-map",
+                    f"{a.name} and {b.name} differ only by lithology and score within "
+                    f"{UNDECIDABLE_MARGIN} of the leader; this separation is not "
+                    f"present in the segmentation, the DEM, or the imagery. A "
+                    f"geological map settles it.",
+                )
 
     if top_name != incumbent and top_ev.total - inc_ev.total >= SWITCH_MARGIN:
         return Adjudication(
