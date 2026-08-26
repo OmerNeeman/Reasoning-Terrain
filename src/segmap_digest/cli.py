@@ -376,6 +376,23 @@ def cmd_ask(args) -> None:
     ))
 
 
+def cmd_showcase(args) -> None:
+    """One HTML page explaining every solution, illustrated from this raster."""
+    from . import showcase
+
+    r = _load(args)
+    print("# building/loading indices", file=sys.stderr)
+    ridx = _regions(r, args)
+    cidx = _chips(r, args)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    print(f"# rendering {out}", file=sys.stderr)
+    showcase.build(r, ridx, cidx, input_path=args.input, out_path=str(out),
+                   classes=args.classes)
+    size = out.stat().st_size / 1e6
+    print(f"wrote {out} ({size:.1f} MB, images inlined -- open it directly)")
+
+
 def cmd_ui(args) -> None:
     """Serve the demo UI. Everything is loaded once here rather than per request:
     the index build is the expensive part, and a browser that takes 50 s to
@@ -522,6 +539,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--min-px", type=int, default=12)
     p.add_argument("--chip", type=int, default=256)
     p.set_defaults(func=cmd_ui)
+
+    p = sub.add_parser("showcase", help="write one HTML page explaining every "
+                                        "solution, illustrated from this raster")
+    _add_input_args(p)
+    p.add_argument("-o", "--out", default="out/showcase.html")
+    p.add_argument("--min-px", type=int, default=12)
+    p.add_argument("--chip", type=int, default=256)
+    p.set_defaults(func=cmd_showcase)
 
     args = ap.parse_args(argv)
     args.func(args)
