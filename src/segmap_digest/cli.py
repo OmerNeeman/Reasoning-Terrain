@@ -376,6 +376,24 @@ def cmd_ask(args) -> None:
     ))
 
 
+def cmd_ui(args) -> None:
+    """Serve the demo UI. Everything is loaded once here rather than per request:
+    the index build is the expensive part, and a browser that takes 50 s to
+    answer its first question reads as broken."""
+    from . import webui
+
+    r = _load(args)
+    print("# building/loading indices before the server starts", file=sys.stderr)
+    ridx = _regions(r, args)
+    cidx = _chips(r, args)
+    webui.serve(
+        r, ridx, cidx,
+        input_path=args.input, classes=args.classes, dem=args.dem,
+        cache=args.cache, host=args.host, port=args.port,
+        legend=taxonomy_legend(compact=False),
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="segmap", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -495,6 +513,15 @@ def main(argv: list[str] | None = None) -> None:
                    choices=["low", "medium", "high", "xhigh", "max"])
     p.add_argument("--thinking", action="store_true", help="show summarised reasoning")
     p.set_defaults(func=cmd_ask)
+
+    p = sub.add_parser("ui", help="serve a local web UI: the map, the query verbs, "
+                                  "`ask`, and all six solutions")
+    _add_input_args(p)
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--min-px", type=int, default=12)
+    p.add_argument("--chip", type=int, default=256)
+    p.set_defaults(func=cmd_ui)
 
     args = ap.parse_args(argv)
     args.func(args)
