@@ -1,0 +1,8 @@
+# input: data/incoming/sinai/tile_cropped_x801_y846_z0.5.tif -> 8192x8192 px @ 0.496 m/px, 67.1 Mpx, 100.0% classified
+# using cached regions index (built 11min ago, 14s to build, .segmap_cache/regions-7fbe4842e52c6a41)
+# corridor (wheeled, seeded from DirtRoad): corridor DirtRoad vehicle wheeled
+# 97.3% of the classified area is reachable from DirtRoad without leaving ground passable to a wheeled vehicle (threshold 0.45, slope limit 25.0 deg, passages narrower than the vehicle width 2.5 m (5 px opening) removed); 3 reachable pocket(s) totalling 152 m2 below 500 m2 excluded as noise from the table and the headline figure
+= 16,086,883.54
+component	area_m2	tile_frac	cy	cx
+1	16086884	97.3%	4124	4118
+# evidence: component ids 1

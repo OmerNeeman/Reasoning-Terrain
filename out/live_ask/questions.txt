@@ -1,0 +1,10 @@
+q01	What kind of ground is this? Give me a short analyst brief of the area.
+q02	How many buildings larger than 40 square meters are there?
+q03	What is the total area of dirt roads, and how does it compare to paved roads?
+q04	How close do the badlands get to the nearest dirt road?
+q05	How much of this area can a wheeled vehicle actually reach from the dirt road network? State the assumptions.
+q06	How many vehicles are visible in this area?
+q07	Are there any trucks or buses here?
+q08	Is there a school or hospital in the built-up area?
+q09	Which parts of the area are too steep for vehicles?
+q10	Which parts of this map do you suspect are misclassified, and why?

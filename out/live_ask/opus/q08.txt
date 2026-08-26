@@ -1,0 +1,55 @@
+### model=claude-opus-5 effort=high
+### question: Is there a school or hospital in the built-up area?
+### tile: data/incoming/sinai/tile_cropped_x801_y846_z0.5.tif
+
+# input: data/incoming/sinai/tile_cropped_x801_y846_z0.5.tif -> 8192x8192 px @ 0.496 m/px, 67.1 Mpx, 100.0% classified
+# using cached regions index (built 12min ago, 14s to build, .segmap_cache/regions-7fbe4842e52c6a41)
+# 15543 regions indexed; answering with tool calls
+Traceback (most recent call last):
+  File "/home/omer/anaconda3/bin/segmap", line 7, in <module>
+    sys.exit(main())
+             ~~~~^^
+  File "/home/omer/PycharmProjects/ST_repos/reasoning-terrain/src/segmap_digest/cli.py", line 500, in main
+    args.func(args)
+    ~~~~~~~~~^^^^^^
+  File "/home/omer/PycharmProjects/ST_repos/reasoning-terrain/src/segmap_digest/cli.py", line 353, in cmd_ask
+    answer = ask_mod.ask_tools(
+        question, r, ridx,
+        legend=taxonomy_legend(compact=False),
+        model=args.model, effort=args.effort, show_thinking=args.thinking,
+    )
+  File "/home/omer/PycharmProjects/ST_repos/reasoning-terrain/src/segmap_digest/ask.py", line 263, in ask_tools
+    message = runner.until_done()
+  File "/home/omer/anaconda3/lib/python3.13/site-packages/anthropic/lib/tools/_beta_runner.py", line 210, in until_done
+    consume_sync_iterator(self)
+    ~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/home/omer/anaconda3/lib/python3.13/site-packages/anthropic/_utils/_streams.py", line 6, in consume_sync_iterator
+    for _ in iterator:
+             ^^^^^^^^
+  File "/home/omer/anaconda3/lib/python3.13/site-packages/anthropic/lib/tools/_beta_runner.py", line 164, in __iter__
+    for item in self._iterator:
+                ^^^^^^^^^^^^^^
+  File "/home/omer/anaconda3/lib/python3.13/site-packages/anthropic/lib/tools/_beta_runner.py", line 175, in __run__
+    with self._handle_request() as item:
+         ~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/omer/anaconda3/lib/python3.13/contextlib.py", line 141, in __enter__
+    return next(self.gen)
+  File "/home/omer/anaconda3/lib/python3.13/site-packages/anthropic/lib/tools/_beta_runner.py", line 311, in _handle_request
+    message = self._client.beta.messages.parse(**self._params, **self._options)
+  File "/home/omer/anaconda3/lib/python3.13/site-packages/anthropic/resources/beta/messages/messages.py", line 1273, in parse
+    return self._post(
+           ~~~~~~~~~~^
+        "/v1/messages?beta=true",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<34 lines>...
+        stream=False,
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/omer/anaconda3/lib/python3.13/site-packages/anthropic/_base_client.py", line 1490, in post
+    return cast(ResponseT, self.request(cast_to, opts, stream=stream, stream_cls=stream_cls))
+                           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/omer/anaconda3/lib/python3.13/site-packages/anthropic/_base_client.py", line 1174, in request
+    raise self._make_status_error_from_response(response) from None
+anthropic.AuthenticationError: Error code: 401 - {'type': 'error', 'error': {'type': 'authentication_error', 'message': 'API key is invalid.'}, 'request_id': None}
+### exit=1 elapsed=3s

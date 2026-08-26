@@ -1,0 +1,8 @@
+# input: data/incoming/sinai/tile_cropped_x801_y846_z0.5.tif -> 8192x8192 px @ 0.496 m/px, 67.1 Mpx, 100.0% classified
+# using cached regions index (built 11min ago, 14s to build, .segmap_cache/regions-7fbe4842e52c6a41)
+# distance_m: distance MaralBadlands DirtRoad
+# closest approach, pixel to pixel
+= 0.50
+class_a	rid_a	ay	ax	class_b	rid_b	by	bx	metres
+MaralBadlands	1817	3320	3977	DirtRoad	1586	3320	3976	0.50
+# evidence: region ids 1817, 1586

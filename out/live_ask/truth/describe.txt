@@ -1,0 +1,32 @@
+# input: data/incoming/sinai/tile_cropped_x801_y846_z0.5.tif -> 8192x8192 px @ 0.496 m/px, 67.1 Mpx, 100.0% classified
+# using cached regions index (built 11min ago, 14s to build, .segmap_cache/regions-7fbe4842e52c6a41)
+# describe (30 classes present): describe
+# fractions are over 67108864 classified pixels (0.0% of the extent is nodata and excluded); region counts are after the index's min-area cut, so small specks are missing from them
+class_id	name	superclass	frac	area_m2	n_regions
+17	Rendzina	soil	0.6530	10793511	2536
+26	DryGrassland	vegetation	0.2498	4129483	5724
+23	Batha	vegetation	0.0364	601973	3372
+9	DirtRoad	road	0.0123	203626	220
+12	MaralBadlands	rock	0.0101	166836	155
+8	PavedRoad	road	0.0068	112522	85
+1	Clutter	artifact	0.0053	88047	837
+24	Garigue	vegetation	0.0043	70907	248
+4	House	built	0.0042	69554	81
+28	LimestoneBoulder	rock	0.0037	61361	620
+33	LimestoneTerrace	rock	0.0024	40304	220
+16	ClayeySoil	soil	0.0018	29465	45
+2	Shadow	artifact	0.0017	28492	340
+7	Pavement	built	0.0017	27684	74
+29	LimestoneStoneyTerrain	rock	0.0012	20354	405
+45	ChalkSmoothRockSlopes	rock	0.0009	14978	96
+13	MaralSmoothRockSlopes	rock	0.0009	14467	28
+15	TerraRosa	soil	0.0008	13710	59
+19	ClayeyDeepSoil	soil	0.0007	12186	32
+10	DirtRoadB	road	0.0005	8917	53
+27	LimestoneRockyTerrain	rock	0.0004	6808	212
+5	GreenGrassland	vegetation	0.0004	6150	20
+6	Car	vehicle	0.0002	2562	24
+3	BrickWall	built	0.0001	1712	12
+25	Maquis	vegetation	0.0001	1673	24
+# NOTE: 5 rows omitted by limit=25
+# evidence: class ids 17, 26, 23, 9, 12, 8, 1, 24, 4, 28, 33, 16, 2, 7, 29, 45, 13, 15, 19, 10, 27, 5, 6, 3, 25 (+5 more)

@@ -1,0 +1,5 @@
+# input: data/incoming/sinai/tile_cropped_x801_y846_z0.5.tif -> 8192x8192 px @ 0.496 m/px, 67.1 Mpx, 100.0% classified
+# using cached regions index (built 11min ago, 14s to build, .segmap_cache/regions-7fbe4842e52c6a41)
+# count: count Car
+= 24.00
+# evidence: region ids 1312, 1292, 1300, 1303, 1310, 1307, 1309, 1296, 1308, 1291, 1311, 1306, 1304, 1305, 1295, 1294, 1293, 1314, 1297, 1302, 1301, 1298, 1299, 1313

@@ -10,3 +10,4 @@ data/incoming/*
 !data/incoming/README.md
 out/
 .segmap_cache/
+.env.rt

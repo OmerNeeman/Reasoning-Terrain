@@ -1,0 +1,5 @@
+# input: data/incoming/sinai/tile_cropped_x801_y846_z0.5.tif -> 8192x8192 px @ 0.496 m/px, 67.1 Mpx, 100.0% classified
+# using cached regions index (built 11min ago, 14s to build, .segmap_cache/regions-7fbe4842e52c6a41)
+# count: count House minarea 40
+= 37.00
+# evidence: region ids 1216, 1201, 1227, 1257, 1209, 1195, 1270, 1265, 1268, 1208, 1239, 1218, 1263, 1191, 1247, 1249, 1210, 1261, 1225, 1190, 1207, 1212, 1222, 1241, 1260 (+12 more)
