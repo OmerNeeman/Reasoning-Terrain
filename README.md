@@ -256,6 +256,10 @@ segmap solve s6                                     # change
 — the one thing the rest of RT does not have, since every other check compares
 the labels against themselves. It never edits the label raster.
 
+**[The Handover](docs/handover.html)** is the whole repo on one page — what RT does,
+what changed, a live interactive tile map, where the bodies are buried, and what to do
+next. Start there if you are new.
+
 **[The Second Map](docs/osm-layer.html)** is the whole layer on one page — the
 ingestion steps, the trust policy, where OSM enters each solution, and what is
 still a guess. **[One Tile, Four Answers](docs/demo.html)** is a real run in
