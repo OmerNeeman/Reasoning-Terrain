@@ -1,0 +1,468 @@
+<title>The Second Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{
+  --bg:#f6f7f8; --panel:#ffffff; --sunk:#eceff2;
+  --ink:#12171c; --dim:#5b6672; --faint:#8c97a3; --line:#dce1e6;
+  --ref:#8a6a2f;        /* OSM — the reference map. Survey brass. */
+  --ref-soft:#f3ecdd;
+  --latest:#2f5d7c;     /* ST — the latest observation. Steel. */
+  --latest-soft:#e6edf2;
+  --ok:#2c7a52; --warn:#8a6320; --bad:#a33b2a;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --serif:"IBM Plex Serif",ui-serif,Georgia,"Times New Roman",serif;
+  --measure:66ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1317; --panel:#151c22; --sunk:#1a232a;
+    --ink:#e5ebf1; --dim:#8c98a4; --faint:#6d7986; --line:#252f38;
+    --ref:#cfa863; --ref-soft:#2a2418;
+    --latest:#7fb3d5; --latest-soft:#17242e;
+    --ok:#6fc79a; --warn:#d9ae62; --bad:#e89078;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1317; --panel:#151c22; --sunk:#1a232a;
+  --ink:#e5ebf1; --dim:#8c98a4; --faint:#6d7986; --line:#252f38;
+  --ref:#cfa863; --ref-soft:#2a2418;
+  --latest:#7fb3d5; --latest-soft:#17242e;
+  --ok:#6fc79a; --warn:#d9ae62; --bad:#e89078;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.page{max-width:1060px;margin:0 auto;padding:0 28px 96px}
+p,li{max-width:var(--measure)}
+a{color:var(--latest);text-underline-offset:2px}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--latest);outline-offset:3px;border-radius:3px}
+code{font-family:var(--mono);font-size:.88em;background:var(--sunk);
+  padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---- masthead ---- */
+.mast{padding:76px 0 40px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);margin:0 0 22px;
+  display:flex;align-items:center;gap:10px}
+.eyebrow svg{flex:none}
+h1{font-family:var(--serif);font-weight:600;font-size:clamp(38px,6vw,60px);
+  line-height:1.04;letter-spacing:-.02em;margin:0 0 20px;text-wrap:balance}
+.deck{font-family:var(--serif);font-size:20px;line-height:1.5;color:var(--dim);
+  max-width:60ch;margin:0}
+.deck em{font-style:italic;color:var(--ink)}
+
+/* ---- sections ---- */
+section{padding:56px 0;border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:0}
+h2{font-family:var(--serif);font-weight:600;font-size:28px;letter-spacing:-.015em;
+  margin:0 0 6px;text-wrap:balance}
+h3{font-family:var(--sans);font-weight:600;font-size:16px;margin:0 0 6px;
+  letter-spacing:-.005em}
+.kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);margin:0 0 14px}
+.lede{font-size:17.5px;color:var(--dim);margin:0 0 28px}
+
+/* ---- two-map key ---- */
+.map-key{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 30px;padding:0;list-style:none}
+.map-key li{display:flex;align-items:baseline;gap:9px;font-size:13.5px;
+  font-family:var(--mono);padding:7px 13px;border-radius:999px;
+  border:1px solid var(--line);background:var(--panel);max-width:none}
+.swatch{width:9px;height:9px;border-radius:2px;flex:none;transform:translateY(1px)}
+.sw-ref{background:var(--ref)} .sw-latest{background:var(--latest)}
+
+/* ---- stat row ---- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;
+  overflow:hidden;margin:0 0 30px}
+.stat{background:var(--panel);padding:18px 18px 16px}
+.stat b{display:block;font-family:var(--mono);font-weight:500;
+  font-size:clamp(22px,3vw,28px);letter-spacing:-.02em;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.stat span{display:block;font-size:12.5px;color:var(--dim);margin-top:6px;
+  line-height:1.4;max-width:none}
+.stat.is-ref b{color:var(--ref)} .stat.is-latest b{color:var(--latest)}
+
+/* ---- pipeline strip ---- */
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));
+  gap:14px;margin:26px 0 0;padding:0;list-style:none;counter-reset:stage}
+.strip li{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:16px 16px 15px;position:relative;max-width:none}
+.strip .step{font-family:var(--mono);font-size:11px;letter-spacing:.1em;
+  color:var(--faint);display:block;margin-bottom:9px}
+.strip h3{font-size:15px;margin-bottom:5px}
+.strip p{font-size:13px;color:var(--dim);margin:0;line-height:1.5;max-width:none}
+
+/* ---- trust table ---- */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:640px}
+th,td{text-align:left;padding:14px 18px;border-bottom:1px solid var(--line);
+  vertical-align:top}
+thead th{font-family:var(--mono);font-size:11px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);font-weight:500;
+  background:var(--sunk)}
+tbody tr:last-child td{border-bottom:0}
+td.axis{font-family:var(--mono);font-size:13px;white-space:nowrap}
+.who{font-family:var(--mono);font-size:12px;font-weight:600;padding:3px 9px;
+  border-radius:5px;white-space:nowrap;display:inline-block}
+.who-ref{color:var(--ref);background:var(--ref-soft);
+  border:1px solid color-mix(in srgb,var(--ref) 30%,transparent)}
+.who-latest{color:var(--latest);background:var(--latest-soft);
+  border:1px solid color-mix(in srgb,var(--latest) 30%,transparent)}
+td .ex{color:var(--dim);font-size:13.5px;display:block;margin-top:5px;
+  max-width:44ch}
+.tag{font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+
+/* ---- solution cards ---- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:16px;margin:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:22px 22px 20px;display:flex;flex-direction:column;gap:10px}
+.card .sid{font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;
+  color:var(--faint)}
+.card h3{font-family:var(--serif);font-size:19px;font-weight:600;margin:0}
+.card p{font-size:14.5px;color:var(--dim);margin:0;max-width:none}
+.card .enters{font-size:14px;margin:0;max-width:none;padding-top:12px;
+  border-top:1px solid var(--line)}
+.card .enters strong{font-weight:600}
+.card ul{margin:2px 0 0;padding-left:18px;font-size:14px;color:var(--dim)}
+.card li{margin:3px 0;max-width:none}
+
+/* ---- console ---- */
+pre{font-family:var(--mono);font-size:12.5px;line-height:1.62;background:var(--sunk);
+  border:1px solid var(--line);border-radius:9px;padding:16px 18px;
+  overflow-x:auto;margin:18px 0 0}
+pre b{font-weight:600;color:var(--ink)}
+pre .c{color:var(--faint)}
+pre .r{color:var(--ref)} pre .l{color:var(--latest)}
+
+/* ---- notes / callouts ---- */
+.rule{border-left:2px solid var(--ref);background:var(--panel);
+  padding:16px 20px;border-radius:0 9px 9px 0;margin:26px 0 0}
+.rule h3{margin-bottom:4px}
+.rule p{margin:0;font-size:14.5px;color:var(--dim)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:26px}
+.checklist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:9px}
+.checklist li{display:flex;gap:11px;align-items:baseline;font-size:14.5px;
+  max-width:none}
+.checklist .mark{font-family:var(--mono);font-size:12px;color:var(--ok);flex:none}
+.checklist .mark.pending{color:var(--warn)}
+footer{padding:40px 0 0;color:var(--faint);font-size:13.5px;font-family:var(--mono)}
+@media (prefers-reduced-motion:no-preference){
+  .card,.strip li,.stat{transition:border-color .18s ease}
+  .card:hover{border-color:color-mix(in srgb,var(--latest) 45%,var(--line))}
+}
+</style>
+
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow">
+    <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true">
+      <circle cx="6.5" cy="6.5" r="4" fill="none" stroke="currentColor" stroke-width="1"/>
+      <path d="M6.5 0v3M6.5 10v3M0 6.5h3M10 6.5h3" stroke="currentColor" stroke-width="1"/>
+    </svg>
+    reasoning-terrain · the OSM layer
+  </p>
+  <h1>The Second Map</h1>
+  <p class="deck">Every check RT had was self-referential: it contradicted a label
+  using the label raster's own geometry, slope and neighbours. It could not tell you
+  that the thing the segmenter called <em>Rendzina</em> is a street — because nothing
+  in a label raster knows where streets are. OpenStreetMap does.</p>
+</header>
+
+<section>
+  <p class="kicker">Why</p>
+  <h2>Two problems, one layer</h2>
+  <p class="lede">A reasoning unit nobody can point at, and an audit with nothing
+  outside itself to check against.</p>
+
+  <div class="stats">
+    <div class="stat is-latest"><b>95,170</b><span>connected components on the aza AOI — the only spatial unit RT had</span></div>
+    <div class="stat is-ref"><b>98</b><span>road-bounded blocks over the same ground, 54 of them with street names</span></div>
+    <div class="stat is-latest"><b>28.6%</b><span>of the ground under a mapped street is labelled <code>Shadow</code> — the segmenter cannot see a street it cannot see</span></div>
+    <div class="stat is-ref"><b>2.08 m</b><span>best-fit shift between the two maps on aza: co-registered, so they may be compared</span></div>
+  </div>
+
+  <p>“Region 41,882” is not a place. Analysts reason about blocks — the ground
+  bounded by streets — and about intersections, and that partition already exists
+  in OSM for every populated AOI RT will ever see. Meanwhile RT abstains honestly
+  on rock (<code>UNDECIDABLE-NEEDS-geological-map</code>) but had no reference map
+  for the three things OSM maps well: <strong>where the roads are, where the
+  buildings are, and where the water is</strong>.</p>
+
+  <div class="rule">
+    <h3>The rule that is never traded away</h3>
+    <p>OSM never edits the label raster. Burning roads into <code>labels</code> is
+    the obvious shortcut, and it destroys the only thing that makes the join
+    valuable — two independent maps you can hold against each other — while
+    importing OSM's errors into RT's output with no way to tell them apart
+    afterwards. The layer is parallel, always.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">Ingestion</p>
+  <h2>Six steps, per tile</h2>
+  <p class="lede">Not a new solution — a second input to stage 0, on the same
+  footing as the DEM. This <em>is</em> a sequence, so it is numbered.</p>
+
+  <ol class="strip">
+    <li><span class="step">A0 · ACQUIRE</span><h3>Snapshot</h3>
+      <p>The raster's affine gives a WGS84 footprint; Overpass gives the ways
+      inside it. Written to disk with its query, server and UTC time — that file,
+      not the live service, is what every later run reads.</p></li>
+    <li><span class="step">A1 · PROJECT</span><h3>To pixels</h3>
+      <p>Through the raster's own inverse affine. No transform, no join: a
+      partition of the wrong ground looks exactly like a partition of the right one.</p></li>
+    <li><span class="step">A2 · BURN</span><h3>Corridors</h3>
+      <p>Each way buffered by a width from its own tags. Work is proportional to
+      corridor area, not raster area — and the ST class histogram under every way
+      is accumulated while its mask exists.</p></li>
+    <li><span class="step">A3 · PARTITION</span><h3>Blocks</h3>
+      <p>The complement of the corridor, labelled. Shared OSM node ids give the
+      intersections and the segments between them.</p></li>
+    <li><span class="step">A4 · GATE</span><h3>Registration</h3>
+      <p>A refusal mechanism, not a metric. If the two maps are metres apart, every
+      narrow feature disagrees for georeferencing reasons and the checks do not run.</p></li>
+    <li><span class="step">A5 · INDEX</span><h3>Cache</h3>
+      <p>Cached beside the region and chip indices, keyed on the snapshot's
+      fingerprint — way ids and tag content, so a refetch that changes nothing is
+      a hit and one retagged street is a miss.</p></li>
+  </ol>
+</section>
+
+<section>
+  <p class="kicker">Policy</p>
+  <h2>Which map wins, and about what</h2>
+  <p class="lede">“OSM is a good way to be a reference for the land, but the ST
+  output is considered latest.” That is two rankings on two questions, not one —
+  and reading it as one gets every check wrong in one direction or the other.</p>
+
+  <ul class="map-key">
+    <li><span class="swatch sw-ref"></span> OSM — the reference map of the land</li>
+    <li><span class="swatch sw-latest"></span> ST — the latest observation of the ground</li>
+  </ul>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th scope="col">The disagreement is about</th>
+        <th scope="col">Authority</th>
+        <th scope="col">Example</th>
+        <th scope="col">Reads as</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td class="axis">existence<span class="ex">is there a street or a building here at all</span></td>
+          <td><span class="who who-ref">OSM</span></td>
+          <td>OSM maps a street; ST shows no road surface under it<span class="ex">The corridor is taken as real. A segmenter that sees no road has not disproved the street.</span></td>
+          <td class="tag">reference-gap</td>
+        </tr>
+        <tr>
+          <td class="axis">identity<span class="ex">which grade, which surface, what is it called</span></td>
+          <td><span class="who who-ref">OSM</span></td>
+          <td>a way tagged <code>surface=asphalt</code> under a polygon labelled soil<span class="ex">The closest thing to ground truth this pipeline has for the paved/dirt split, which is otherwise a judgement about texture.</span></td>
+          <td class="tag">identity-conflict</td>
+        </tr>
+        <tr>
+          <td class="axis">state<span class="ex">what does that ground look like <em>now</em></span></td>
+          <td><span class="who who-latest">ST</span></td>
+          <td>OSM has a building footprint; ST shows bare rubble<span class="ex">ST is the newer fact. Relabelling that polygon <code>House</code> would be RT overwriting an observation with a memory.</span></td>
+          <td class="tag">state-change</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="rule">
+    <h3>Two behaviours this inverted</h3>
+    <p>A mapped building over a polygon ST calls <code>MaralBadlands</code> is no
+    longer grounds for switching it to <code>House</code> — it is a change
+    candidate, and on aza a region 78% under a footprint that switched before the
+    policy keeps its label after it. And an ST road with no OSM way is not an ST
+    false positive by default: ST is the later map, so the first reading is an
+    unmapped track, which makes it a free OSM edit.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">Consumption</p>
+  <h2>Where it enters the four solutions</h2>
+  <p class="lede">Each is a new input to an existing mechanism, not a new
+  mechanism. None of the four calls a model.</p>
+
+  <div class="cards">
+    <article class="card">
+      <span class="sid">S1</span>
+      <h3>Consistency audit</h3>
+      <p>Which labels contradict their context, slope or geometry — rolled up so
+      one row is one decision, however many regions it covers.</p>
+      <p class="enters"><strong>Seven reference check families.</strong> The only
+      checks that can contradict a label using something outside the label raster.</p>
+      <ul>
+        <li><code>osm-road-missing</code> · <code>-occluded</code> · <code>-grade</code> · <code>-extra</code></li>
+        <li><code>osm-building-missing</code> · <code>-extra</code></li>
+        <li><code>osm-water-extra</code></li>
+      </ul>
+      <p class="enters">On aza they take the top of the worklist: 2,248 mapped
+      buildings with no <code>House</code> under them, keyed by what ST said
+      instead, and 40 residential streets with no road surface.</p>
+    </article>
+
+    <article class="card">
+      <span class="sid">S2</span>
+      <h3>Confusion adjudication</h3>
+      <p>S1 says a region is wrong; S2 says what it is, or refuses. The refusal is
+      the feature.</p>
+      <p class="enters"><strong>A fourth evidence term, plus candidates the
+      taxonomy would never offer.</strong> A <code>Rendzina</code> polygon on a way
+      tagged <code>surface=asphalt</code> needs <code>PavedRoad</code> on the
+      shortlist; soil-to-road is the distance metric's maximum.</p>
+      <p class="enters">Where OSM is silent the term is <code>None</code> and the
+      score is bit-identical to what it was before the layer existed. That identity
+      is a test, not a hope.</p>
+    </article>
+
+    <article class="card">
+      <span class="sid">S3</span>
+      <h3>Detection triage</h3>
+      <p>Which units are worth an expensive detector. The model compiles a policy
+      once; a deterministic scorer applies it to millions of units.</p>
+      <p class="enters"><strong>Reference features, and a new unit of spend.</strong>
+      <code>osm.dist_road</code>, <code>osm.building_frac</code>,
+      <code>osm.n_junctions</code> in the same rule syntax as the class fractions —
+      a settlement prior that is a fact, not an inference from the map being triaged.</p>
+      <p class="enters">And the block replaces the grid square: reviewing “block 84,
+      bounded by شارع النخيل” is a different act from reviewing “chip 1,192”.</p>
+    </article>
+
+    <article class="card">
+      <span class="sid">S4</span>
+      <h3>Derived products</h3>
+      <p>47 classes plus slope plus season become trafficability, concealment,
+      drainage, fire fuel.</p>
+      <p class="enters"><strong>Named overlay terms.</strong> A mapped street is
+      passable where the segmenter saw only shadow; a footprint is impassable, is
+      cover beside it, and is not fuel. A mapped wadi is a channel even with no DEM.</p>
+      <p class="enters">Every product states what the overlay moved before showing
+      a figure — on aza, 27.5% of pixels, with the street network going from 0.42
+      to 0.81 mean trafficability.</p>
+    </article>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">Addressing</p>
+  <h2>Blocks are built on the AOI, addressed per tile</h2>
+  <p class="lede">At aza's 0.122 m/px a 1024² tile is 125 m of ground — a third of
+  a city block. A per-tile partition would invent boundaries at the seam that exist
+  nowhere on the ground.</p>
+
+  <p>So a tile does not partition itself; it reports which blocks it covers, with
+  <strong>both shares</strong>. “This tile is 4% of block 84” and “block 84 is 60%
+  of this tile” are different facts, and quoting one as the other is exactly how a
+  subset answer gets presented as an AOI answer.</p>
+
+<pre><span class="c"># window tile_cropped_x3237_y3495.tif at rows 3381:11573, cols 0:7138</span>
+<span class="c"># touches 13 of the AOI's 98 blocks</span>
+block  of_window  of_block  quotable       area_m2  bounded_by
+<b>84</b>     16.6%      75.8%     <span class="r">NO -- partial</span>  120018   شارع الرياض, شارع الشعف
+<b>69</b>     10.2%      100.0%    <span class="l">yes</span>            56053   شارع الشعف
+<b>65</b>      9.2%      100.0%    <span class="l">yes</span>            50727   شارع الرياض, شارع مشتهى
+<span class="c"># NOTE: 1 of the blocks listed extends beyond this window. Its area_m2,
+#       top3 and bounded_by describe the WHOLE block, including ground this
+#       window cannot see; do not report them as measurements of this tile.</span></pre>
+</section>
+
+<section>
+  <p class="kicker">Vocabulary</p>
+  <h2>What the class name does not say</h2>
+  <p class="lede"><code>TerraRosa</code> is one token. What an analyst means by it
+  is a paragraph — and the class names are the entire interface between a segmenter
+  that learned integers and a model that knows geology.</p>
+
+  <div class="grid2">
+    <div>
+      <p><code>docs/class_notes.md</code> is Markdown, one section per class, that
+      a domain expert edits without asking anyone. A taxonomy that needs a pull
+      request to correct is a taxonomy that stays wrong.</p>
+      <p>Four fields are read by <em>code</em>, which is what separates it from a
+      glossary. The rest is prose the model reads — injected only for the classes
+      in play, never as a 47-class wall of text.</p>
+    </div>
+    <div>
+      <ul class="checklist">
+        <li><span class="mark">→</span><span><code>confused_with</code> feeds S2's candidate shortlist. A measured confusion beats the taxonomy's guess at which classes are alike.</span></li>
+        <li><span class="mark">→</span><span><code>season</code> gates S6's phenology reasoning.</span></li>
+        <li><span class="mark">→</span><span><code>never</code> becomes a candidate prior — admitted only if it is about geometry, position or physics.</span></li>
+        <li><span class="mark">→</span><span><code>scale</code> replaces S2's guessed area and elongation bands.</span></li>
+        <li><span class="mark pending">?</span><span><code>source</code> and <code>confidence</code> are not bureaucracy: four unattributed textbook priors once produced 9,793 false findings on one AOI.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">Try it</p>
+  <h2>The playground</h2>
+  <p class="lede">Drop in a segmentation raster. RT indexes it, pulls the current
+  OSM data for that exact footprint, and runs all four solutions over ground it has
+  never seen.</p>
+
+<pre><span class="c">$</span> segmap playground
+<span class="c">RT playground on http://127.0.0.1:8011/</span>
+
+<span class="c"># measured on a 4 Mpx crop of an aza tile, end to end:</span>
+raster            2000 x 2000 px @ 0.122 m/px, 100.0% classified
+regions           6,275 connected components
+OSM ways          <span class="r">1,030</span> — building 973, road 51, footway 6
+OSM fetched       2026-08-26T13:43:59 UTC   <span class="c">← live, this run</span>
+blocks            6 road-bounded, 4 junctions
+co-registration   <span class="l">REGISTERED</span> — best shift 2.45 m
+                  <span class="c">S1 · S2 · S3 · S4 all rendered — 103 s</span></pre>
+
+  <p style="margin-top:22px">Every panel is the CLI's own renderer, so anything on
+  that page is reproducible with <code>segmap solve … --osm</code>. A GeoTIFF
+  carries its own georeference; a <code>.png</code> or <code>.npy</code> is asked
+  for the bounding box it covers, rather than being joined to a guess.</p>
+</section>
+
+<section>
+  <p class="kicker">Standing</p>
+  <h2>What is true, and what is still a guess</h2>
+
+  <div class="grid2">
+    <div>
+      <h3>Built and running</h3>
+      <ul class="checklist">
+        <li><span class="mark">✓</span><span>Ingestion A0–A5, cached, with a live snapshot for aza</span></li>
+        <li><span class="mark">✓</span><span>Trust policy wired into S1's severity and S2's evidence</span></li>
+        <li><span class="mark">✓</span><span>Tile addressing, both shares, quotability flag</span></li>
+        <li><span class="mark">✓</span><span>S1 · S2 · S3 · S4 and the block unit of spend</span></li>
+        <li><span class="mark">✓</span><span>Class-notes parser, template, coverage command</span></li>
+        <li><span class="mark">✓</span><span>26 tests over the invariants that matter</span></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Known risks</h3>
+      <ul class="checklist">
+        <li><span class="mark pending">!</span><span><strong>OSM completeness is unmeasured</strong> for these AOIs. Every reliability number is a guess, and the defaults are deliberately timid. One day of work — 30 blocks, compared by eye — converts the table into measurements.</span></li>
+        <li><span class="mark pending">!</span><span><strong>aza's class-id mapping is suspect, and the join is what exposed it.</strong> Its tiles carry no mapping tag, so they are read with the mapping from the sinai drop. Under it, “marl badlands” is the dominant class inside dense urban blocks and half of all mapped buildings have no <code>House</code> under them.</span></li>
+        <li><span class="mark pending">!</span><span><strong>Class notes are empty.</strong> The infrastructure is in; the content is a domain expert's to write.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>reasoning-terrain · docs/OSM.md · docs/OSM-INGESTION.md · src/segmap_digest/osm/</footer>
+
+</div>

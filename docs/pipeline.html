@@ -409,12 +409,18 @@ Everything else is optional. The traps below were all found on real exports.</p>
 
 <tr>
   <td><b>S4 product rasters</b><br>PNG + per-region tables</td>
-  <td class="msg">"Can I drive there / hide there / will it pool / will it burn?"</td>
+  <td class="msg">"Can I drive there / can something that size hide there / what
+    kind of ground is this / would this have looked different anyway?"</td>
   <td><code>segmap solve s4 -i $T --product trafficability --wet --regions -o out/traf.png</code></td>
   <td class="msg">Four products: <code>trafficability</code>,
-    <code>concealment</code>, <code>drainage</code>, <code>fire_fuel</code>. Each a
-    float raster in [0,1] plus per-superclass means and an optional per-region
-    table. <b>Half of it is inert without a DEM</b> — measured, see
+    <code>concealment</code> (of a <b>named target size</b> — person, vehicle or
+    structure; the same canopy that hides a crouching man does not hide a truck),
+    <code>built_fabric</code> (bare-natural → dense-urban, the honest per-tile
+    answer to "how populated is this") and <code>change_volatility</code> (how
+    much this ground was always going to differ between two dates from season,
+    phenology and illumination — the baseline a change detector must beat, and
+    <b>unvalidated</b>). Each is a float raster in [0,1] plus per-superclass
+    means and an optional per-region table. <b>Half of it is inert without a DEM</b> — measured, see
     <a href="#trust">§5</a>. No LLM in the runtime path; a model helps
     <em>author</em> the lookup tables, never evaluate them.</td>
 </tr>
@@ -520,13 +526,23 @@ rather than left to a prompt.</p>
       mosaic (15 of 33 classes present; 1.4% and 8 of 20 classes on the single
       tile). The other 97% is <b>unexamined, not clean</b>. The slope and aspect
       priors abstain rather than score against zeros.</li>
-    <li><b>Half of S4 is inert.</b> Measured on the sinai tile: <code>drainage</code>
-      returns p10 = p90 = 0.60 — a constant with a binary wet-class bump, carrying
-      no information; <code>concealment</code> means 0.00 across soil, rock and road,
-      i.e. 98% of the tile, because both its relief term and the canopy of the
-      classes present are zero. Only <code>trafficability</code> and
-      <code>fire_fuel</code> vary at all, and trafficability degrades to a pure
-      per-class lookup.</li>
+    <li><b>Half of S4 is inert.</b> Two of the four products carry a topographic
+      term and both are multiplying by zero. Measured on the sinai tile:
+      <code>concealment</code> (person target) means <b>0.002</b> with p90 = 0.00
+      across soil, rock and road, i.e. 98% of the tile, because both its relief
+      term and the canopy of the classes present are zero;
+      <code>trafficability</code> degrades to a pure per-class lookup
+      (p10 = p50 = 0.70, and 98.9% of the tile scores passable). The other two
+      products never look at elevation, so they are unaffected — but neither is
+      thereby validated. <code>built_fabric</code> means <b>0.011</b> here with
+      0.2% of the tile above 0.5, which is the correct answer for empty desert
+      and is also why this tile tests nothing about it: its load-bearing
+      constant is the 50 m smoothing window, and nothing in an empty AOI
+      exercises that window. <code>change_volatility</code> is the only product
+      that varies freely (mean 0.29, p10 0.20, p90 0.90) and it is
+      <b>unvalidated by construction</b> — every number is read off a class
+      definition, and validating it needs a second acquisition this project does
+      not have.</li>
   </ul>
 </li>
 

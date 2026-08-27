@@ -33,6 +33,8 @@ moment you have one.
 
 ```bash
 segmap compare                       # all levels, with token counts
+segmap osm --tile t.tif              # OSM road blocks, per tile (needs a GeoTIFF)
+segmap notes                         # what the class notes still need
 segmap digest l2 --limit 40          # region table
 segmap audit                         # consistency findings
 segmap preview -o tile.png           # colourised PNG, for eyeballing
@@ -244,9 +246,45 @@ segmap solve s6                                     # change
 | **S1** | audit | which labels contradict their context, slope, or geometry | [S1](docs/solutions/S1-audit.md) |
 | **S2** | adjudicate | given a suspect region, what *is* it — or is it undecidable | [S2](docs/solutions/S2-adjudicate.md) |
 | **S3** | triage | which chips are worth sending to an expensive detector | [S3](docs/solutions/S3-triage.md) |
-| **S4** | products | trafficability, concealment, drainage, fire fuel | [S4](docs/solutions/S4-products.md) |
+| **S4** | products | trafficability, concealment (of a named target size), built fabric, change volatility | [S4](docs/solutions/S4-products.md) |
 | **S5** | query | counts, areas, distances, movement corridors | [S5](docs/solutions/S5-query.md) |
 | **S6** | change | semantic diff: phenology vs succession vs real change | [S6](docs/solutions/S6-change.md) |
+
+### The OSM layer
+
+`--osm` joins OpenStreetMap as a **second, independent map of the same ground**
+— the one thing the rest of RT does not have, since every other check compares
+the labels against themselves. It never edits the label raster.
+
+**[The Second Map](docs/osm-layer.html)** is the whole layer on one page — the
+ingestion steps, the trust policy, where OSM enters each solution, and what is
+still a guess. **[One Tile, Four Answers](docs/demo.html)** is a real run in
+pictures: the segmentation, the join, the partition, and what the overlay does to
+a trafficability map.
+
+```bash
+segmap playground                             # upload a raster, run S1-S4 + live OSM
+segmap osm -i data/aoi/ --osm                 # corridor, junctions, blocks
+segmap osm -i data/aoi/ --osm --tile t.tif    # which blocks one tile covers
+segmap solve s1 --osm                         # + 7 reference check families
+segmap solve s3 --osm --unit block            # blocks as the unit of spend
+segmap solve s4 --osm --product trafficability
+```
+
+It gives RT a reasoning unit an analyst already thinks in: on the aza AOI, **98
+road-bounded blocks** with street names, against 95,170 connected components.
+Who wins a disagreement is a stated policy, not a default —
+[`osm/trust.py`](src/segmap_digest/osm/trust.py): OSM is the reference for what
+is *there*, ST is the latest word on what it *looks like now*. Details in
+[docs/OSM.md](docs/OSM.md) and [docs/OSM-INGESTION.md](docs/OSM-INGESTION.md).
+
+### Class notes
+
+[`docs/class_notes.md`](docs/class_notes.md) is where an analyst writes down what
+a class name does not say. Four fields are read by code, not just by the model —
+`confused_with` feeds S2's candidate shortlist, and beats the taxonomy's guess at
+which classes are alike. `segmap notes` ranks the 47 classes by their share of
+*your* AOI against which fields are filled, so the effort goes where the map is.
 
 Three things the naive versions already get right, because they're the parts
 that are easy to get wrong later:

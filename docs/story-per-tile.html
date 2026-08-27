@@ -1,0 +1,595 @@
+<title>The Story Per Tile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+:root{
+  --bg:#f6f7f8; --panel:#ffffff; --sunk:#eceff2;
+  --ink:#12171c; --dim:#5b6672; --faint:#8c97a3; --line:#dce1e6;
+  --accent:#2f5d7c;
+  /* the altitude scale: what unit a source may legitimately write to */
+  --t-tile:#2f6d64; --t-tile-bg:#e4efec;
+  --t-block:#2f5d7c; --t-block-bg:#e6edf2;
+  --t-aoi:#8a6a2f;  --t-aoi-bg:#f3ecdd;
+  --t-vec:#6a4a7c;  --t-vec-bg:#efe9f3;
+  --no:#a33b2a; --no-bg:#f6e6e2; --yes:#2c7a52;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --serif:"IBM Plex Serif",ui-serif,Georgia,"Times New Roman",serif;
+  --measure:66ch;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1317; --panel:#151c22; --sunk:#1a232a;
+  --ink:#e5ebf1; --dim:#8c98a4; --faint:#6d7986; --line:#252f38;
+  --accent:#7fb3d5;
+  --t-tile:#79c4b4; --t-tile-bg:#162925;
+  --t-block:#7fb3d5; --t-block-bg:#17242e;
+  --t-aoi:#cfa863;  --t-aoi-bg:#2a2418;
+  --t-vec:#b79ccc;  --t-vec-bg:#241d2b;
+  --no:#e89078; --no-bg:#2e1d19; --yes:#6fc79a;
+}}
+:root[data-theme="dark"]{
+  --bg:#0e1317; --panel:#151c22; --sunk:#1a232a;
+  --ink:#e5ebf1; --dim:#8c98a4; --faint:#6d7986; --line:#252f38;
+  --accent:#7fb3d5;
+  --t-tile:#79c4b4; --t-tile-bg:#162925;
+  --t-block:#7fb3d5; --t-block-bg:#17242e;
+  --t-aoi:#cfa863;  --t-aoi-bg:#2a2418;
+  --t-vec:#b79ccc;  --t-vec-bg:#241d2b;
+  --no:#e89078; --no-bg:#2e1d19; --yes:#6fc79a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.page{max-width:1120px;margin:0 auto;padding:0 28px 96px}
+p,li{max-width:var(--measure)}
+a{color:var(--accent);text-underline-offset:2px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+code{font-family:var(--mono);font-size:.87em;background:var(--sunk);
+  padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
+.num{font-variant-numeric:tabular-nums}
+
+.mast{padding:76px 0 40px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);margin:0 0 22px;
+  display:flex;align-items:center;gap:10px}
+h1{font-family:var(--serif);font-weight:600;font-size:clamp(38px,6vw,60px);
+  line-height:1.04;letter-spacing:-.02em;margin:0 0 20px;text-wrap:balance}
+.deck{font-family:var(--serif);font-size:20px;line-height:1.5;color:var(--dim);
+  max-width:62ch;margin:0}
+.deck em{font-style:italic;color:var(--ink)}
+
+section{padding:56px 0;border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:0}
+h2{font-family:var(--serif);font-weight:600;font-size:28px;letter-spacing:-.015em;
+  margin:0 0 8px;text-wrap:balance}
+h3{font-family:var(--sans);font-weight:600;font-size:16.5px;margin:0 0 6px}
+.kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--faint);margin:0 0 14px}
+.lede{font-size:17.5px;color:var(--dim);margin:0 0 28px}
+
+/* verdicts */
+.verdicts{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));
+  gap:16px}
+.v{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:20px 22px;display:flex;flex-direction:column;gap:9px}
+.v .ask{font-family:var(--mono);font-size:12px;color:var(--faint);
+  letter-spacing:.04em}
+.v .ans{font-family:var(--serif);font-size:23px;font-weight:600;line-height:1.15;
+  margin:0}
+.v.no .ans{color:var(--no)} .v.yes .ans{color:var(--yes)}
+.v.part .ans{color:var(--t-aoi)}
+.v p{font-size:14.5px;color:var(--dim);margin:0;max-width:none}
+.v .cite{font-family:var(--mono);font-size:11.5px;color:var(--faint);
+  border-top:1px solid var(--line);padding-top:10px;margin-top:2px}
+
+/* altitude badges */
+.badge{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;padding:3px 8px;border-radius:5px;white-space:nowrap;
+  display:inline-block;border:1px solid transparent}
+.b-tile{color:var(--t-tile);background:var(--t-tile-bg);border-color:var(--t-tile)}
+.b-block{color:var(--t-block);background:var(--t-block-bg);border-color:var(--t-block)}
+.b-aoi{color:var(--t-aoi);background:var(--t-aoi-bg);border-color:var(--t-aoi)}
+.b-vec{color:var(--t-vec);background:var(--t-vec-bg);border-color:var(--t-vec)}
+.b-no{color:var(--no);background:var(--no-bg);border-color:var(--no)}
+
+.ladder{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:14px;margin:0 0 30px;padding:0;list-style:none}
+.ladder li{background:var(--panel);border:1px solid var(--line);border-radius:9px;
+  padding:16px 18px;max-width:none;display:flex;flex-direction:column;gap:8px}
+.ladder p{font-size:13.5px;color:var(--dim);margin:0;max-width:none;line-height:1.5}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel);margin:0 0 10px}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:720px;
+  font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);
+  vertical-align:top}
+thead th{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--faint);font-weight:500;background:var(--sunk);
+  position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+td.name{font-weight:600;white-space:nowrap}
+td.small{font-family:var(--mono);font-size:12.5px;color:var(--dim)}
+td .why{display:block;color:var(--dim);font-weight:400;font-size:13px;
+  margin-top:4px;max-width:46ch}
+.rt{text-align:right}
+.cap{font-size:13.5px;color:var(--faint);margin:0 0 24px}
+
+.finds{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+.find{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:20px 22px;display:flex;flex-direction:column;gap:9px}
+.find h3{margin:0}
+.find p{font-size:14.5px;color:var(--dim);margin:0;max-width:none}
+.find .path{font-family:var(--mono);font-size:11.5px;color:var(--faint);
+  word-break:break-all;border-top:1px solid var(--line);padding-top:10px}
+
+.warn{border-left:2px solid var(--no);background:var(--panel);padding:16px 20px;
+  border-radius:0 9px 9px 0;margin:24px 0 0}
+.warn h3{margin-bottom:4px}
+.warn p{margin:0;font-size:14.5px;color:var(--dim)}
+.note{border-left:2px solid var(--accent);background:var(--panel);padding:16px 20px;
+  border-radius:0 9px 9px 0;margin:24px 0 0}
+.note p{margin:0;font-size:14.5px;color:var(--dim)}
+pre{font-family:var(--mono);font-size:12.5px;line-height:1.62;background:var(--sunk);
+  border:1px solid var(--line);border-radius:9px;padding:16px 18px;overflow-x:auto;
+  margin:18px 0 0}
+pre b{font-weight:600;color:var(--ink)}
+pre .c{color:var(--faint)}
+ol.ranked{counter-reset:r;list-style:none;padding:0;margin:0;display:flex;
+  flex-direction:column;gap:14px}
+ol.ranked li{counter-increment:r;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:18px 22px 18px 62px;position:relative;max-width:none}
+ol.ranked li::before{content:counter(r);position:absolute;left:22px;top:17px;
+  font-family:var(--mono);font-size:19px;font-weight:600;color:var(--accent)}
+ol.ranked p{margin:6px 0 0;font-size:14.5px;color:var(--dim);max-width:none}
+footer{padding:40px 0 0;color:var(--faint);font-size:13.5px;line-height:1.6}
+footer p{max-width:none}
+</style>
+
+<div class="page">
+
+<header class="mast">
+  <p class="eyebrow">
+    <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true">
+      <circle cx="6.5" cy="6.5" r="4" fill="none" stroke="currentColor" stroke-width="1"/>
+      <path d="M6.5 0v3M6.5 10v3M0 6.5h3M10 6.5h3" stroke="currentColor" stroke-width="1"/>
+    </svg>
+    reasoning-terrain · geodata survey · 2026-08-27
+  </p>
+  <h1>The Story Per Tile</h1>
+  <p class="deck">What else can be joined to a 0.1 m/px segmentation raster to say how
+  populated this ground is, what changed here, and why? Six agents went looking, over
+  the two Middle-Eastern AOIs this project actually runs on. The answer is <em>a great
+  deal</em> — but almost none of it at tile scale, and the discipline is knowing which
+  altitude each source is allowed to speak from.</p>
+</header>
+
+<section>
+  <p class="kicker">The three you asked for by name</p>
+  <h2>Straight answers first</h2>
+
+  <div class="verdicts">
+    <article class="v no">
+      <span class="ask">"Instagram posts from this location in the past 24 h"</span>
+      <p class="ans">No — the capability does not exist</p>
+      <p>Not gated, not paywalled, absent. <code>IG Media</code> exposes 29 readable
+      fields and none is a location; Meta's docs explicitly list <code>location</code>,
+      <code>latitude</code> and <code>longitude</code> as <strong>not supported</strong>.
+      The Basic Display API has returned errors since 2024-12-04. Hashtag search does
+      have your 24-hour window — but its axis is a hashtag, it returns no coordinates,
+      and the quota is 30 unique hashtags per rolling <em>week</em>.</p>
+      <p class="cite">Every mainstream platform removed third-party geo between 2018
+      and 2020. X survives as a city-scale bounding box on ~1% of posts at $0.005 per
+      read. Telegram's ToS §1.5 bans using API data for AI/ML — disqualifying here
+      specifically.</p>
+    </article>
+
+    <article class="v no">
+      <span class="ask">"Traffic"</span>
+      <p class="ans">No — and it would be unusable anyway</p>
+      <p>TomTom does not support Palestine; HERE's coverage table omits it; Google and
+      Apple disabled live traffic and busyness across Israel and Gaza in October 2023 at
+      military request. Egypt is nominally covered by TomTom — into a depopulated
+      restricted military zone with no probe density.</p>
+      <p class="cite">The licences close it regardless. Google's ToS §3.2.3(c)(iv)
+      prohibits using coordinates "as an input for point-in-polygon analysis" — which is
+      what a per-tile join <em>is</em> — and (c)(vii) bars using the content to train,
+      test or validate a model.</p>
+    </article>
+
+    <article class="v part">
+      <span class="ask">"People per square kilometre"</span>
+      <p class="ans">Obtainable — and a confident lie in Gaza</p>
+      <p>Over one northern-Sinai window the three mainstream products return
+      <strong>318,868</strong> (GHS-POP), <strong>139,542</strong> (WorldPop) and
+      <strong>114,998</strong> (Meta HRSL). A 2.8× spread. That spread is the error bar,
+      and no dasymetric refinement narrows it.</p>
+      <p class="cite">Palestine's census inputs are 6–16 admin units for the whole
+      territory, so every within-governorate gradient is model output. WorldPop's Gaza
+      series runs 63,152 (2015) → 78,469 (2024) → 87,258 (2030) — a smooth curve
+      straight through the war.</p>
+    </article>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">The spine</p>
+  <h2>Altitude of claim</h2>
+  <p class="lede">Every source below is badged with the <em>smallest unit it may
+  legitimately write to</em>. That badge is arithmetic, not opinion — it falls out of
+  the source's pixel against this project's real units.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th scope="col">RT unit</th><th scope="col" class="rt">side</th>
+        <th scope="col" class="rt">10 m</th><th scope="col" class="rt">30 m</th>
+        <th scope="col" class="rt">100 m</th><th scope="col" class="rt">375 m</th>
+        <th scope="col" class="rt">500 m</th><th scope="col" class="rt">1 km</th>
+      </tr></thead>
+      <tbody>
+        <tr><td class="name">aza median block</td><td class="rt small">64 m</td>
+          <td class="rt">6.4</td><td class="rt">2.1</td><td class="rt"><b>0.64</b></td>
+          <td class="rt">0.17</td><td class="rt">0.13</td><td class="rt">0.06</td></tr>
+        <tr><td class="name">aza tile (1024 px)</td><td class="rt small">125 m</td>
+          <td class="rt">12.5</td><td class="rt">4.2</td><td class="rt"><b>1.25</b></td>
+          <td class="rt">0.33</td><td class="rt">0.25</td><td class="rt">0.13</td></tr>
+        <tr><td class="name">sinai tile (1024 px)</td><td class="rt small">508 m</td>
+          <td class="rt">51</td><td class="rt">17</td><td class="rt">5.1</td>
+          <td class="rt">1.35</td><td class="rt">1.02</td><td class="rt">0.51</td></tr>
+        <tr><td class="name">aza AOI</td><td class="rt small">1.04 km</td>
+          <td class="rt">104</td><td class="rt">35</td><td class="rt">10.4</td>
+          <td class="rt">2.8</td><td class="rt">2.1</td><td class="rt">1.0</td></tr>
+        <tr><td class="name">sinai AOI</td><td class="rt small">13.2 km</td>
+          <td class="rt">1321</td><td class="rt">440</td><td class="rt">132</td>
+          <td class="rt">35</td><td class="rt">26</td><td class="rt">13</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap">Source cells across one side of the unit. Below 1 means the unit is
+  smaller than a single source pixel.</p>
+
+  <p>Read the third column and the argument is finished. <strong>WorldPop at 100 m is
+  larger than the median Gaza block.</strong> A "people per km²" figure attached to a
+  block is one interpolated pixel wearing a per-block label. VIIRS nightlights at 500 m
+  and FIRMS thermal at 375 m are a quarter and a third of a <em>tile</em> — and the
+  grids are not aligned, so an arbitrary tile straddles two to four of them and even the
+  "correct" one is a blend.</p>
+
+  <ul class="ladder">
+    <li><span class="badge b-tile">tile</span>
+      <p>≤30 m. Burnable onto the raster grid, like the OSM layer. May assert about a
+      single tile.</p></li>
+    <li><span class="badge b-block">block</span>
+      <p>~100 m. One attribute per block or per tile-group, with the unit named in the
+      output. Never rendered as a raster.</p></li>
+    <li><span class="badge b-aoi">AOI</span>
+      <p>≥250 m. Context and alerting. May point a human or a 10 m query at a tile; may
+      never characterise one.</p></li>
+    <li><span class="badge b-vec">vector</span>
+      <p>Joins by geometry, not resolution. Precision is the <em>record's</em> — a
+      building polygon is tile-precise, a news geocode is a city centroid.</p></li>
+  </ul>
+
+  <div class="note"><p><strong>The rule worth encoding:</strong> a source whose pixel is
+  larger than a tile may only write to a spatial unit at or above its own pixel size,
+  and a tile may only <em>read</em> such a value as named, attributed context.
+  Resampling a 500 m raster to 0.5 m and reading off a tile does not create information
+  — it launders a neighbourhood average into a claim about a courtyard.</p></div>
+</section>
+
+<section>
+  <p class="kicker">What exists</p>
+  <h2>The sources that survive contact</h2>
+  <p class="lede">Everything here was verified live on 2026-08-27 — endpoints fetched,
+  and in most cases pixels read inside the AOIs. Anything that could not be confirmed
+  is marked as such rather than repeated.</p>
+
+  <h3 style="margin:26px 0 12px">What changed here, and when</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th scope="col">Source</th><th scope="col">Altitude</th>
+      <th scope="col">Res</th><th scope="col">Latency</th><th scope="col">Licence</th></tr></thead>
+    <tbody>
+      <tr><td class="name">Sentinel-2 L2A<span class="why">The only optical source that
+        resolves your tiles. 3.3-day mean revisit measured over Gaza — S2A, S2B and S2C
+        are all acquiring. One MGRS tile, T36RXV, serves both AOIs.</span></td>
+        <td><span class="badge b-tile">tile</span></td><td class="small">10 m</td>
+        <td class="small">26–29 h<br><span style="color:var(--faint)">measured, n=6</span></td>
+        <td class="small">Copernicus<br>free/open</td></tr>
+      <tr><td class="name">Dynamic World<span class="why">9 land-cover
+        <em>probability</em> bands, not just the argmax label. ~83 clean observations a
+        year over Gaza, ~94 over Sinai — against your raster's one.</span></td>
+        <td><span class="badge b-tile">tile</span></td><td class="small">10 m</td>
+        <td class="small">~1 day</td><td class="small">CC BY 4.0</td></tr>
+      <tr><td class="name">Sentinel-1 InSAR coherence<span class="why">The damage proxy,
+        and it sees through cloud, smoke and night. Three tracks over Gaza on clean 6-day
+        repeats, so a fresh pair completes about every two days. You run it — CDSE
+        <code>CARD-COH6</code> or ASF HyP3.</span></td>
+        <td><span class="badge b-block">block</span></td><td class="small">20–90 m</td>
+        <td class="small">25–29 h<br>+ processing</td><td class="small">Copernicus</td></tr>
+      <tr><td class="name">S1 global coherence baseline<span class="why">The denominator
+        nobody remembers. Seasonal median coherence, so you report an <em>anomaly</em>
+        rather than a raw number — low coherence over sand is normal and means nothing.
+        Tile <code>N32E034</code> covers both AOIs.</span></td>
+        <td><span class="badge b-block">block</span></td><td class="small">79×93 m</td>
+        <td class="small">static 2019–20</td><td class="small">CC BY 4.0</td></tr>
+      <tr><td class="name">NASA Black Marble VNP46A2<span class="why">Night radiance —
+        the electricity-and-presence signal. Gaza City is down ~91% against its pre-2023
+        baseline. Use Collection 2; the C1 Earth Engine asset is stale at 2025-01-02.</span></td>
+        <td><span class="badge b-aoi">AOI</span></td><td class="small">500 m</td>
+        <td class="small">~2 d (GEE)<br>3–5 h (LAADS)</td><td class="small">NASA open</td></tr>
+      <tr><td class="name">NASA FIRMS<span class="why">A rare-event tripwire, not a data
+        layer: in a quiet week there were <strong>zero</strong> detections in either AOI.
+        Gotcha — these AOIs are in the <code>Russia_Asia</code> region file, not
+        <code>Europe</code>. Sub-60-second alerts are CONUS only.</span></td>
+        <td><span class="badge b-aoi">AOI</span></td><td class="small">375 m</td>
+        <td class="small">≤3 h</td><td class="small">free</td></tr>
+      <tr><td class="name">OSM minutely replication<span class="why">"Someone looked
+        closely enough at this ground to redraw the map of it." Tile-precise, free, and
+        an extension of a pipeline RT already runs.</span></td>
+        <td><span class="badge b-tile">tile</span></td><td class="small">vector</td>
+        <td class="small"><b>26 s</b><br><span style="color:var(--faint)">measured</span></td>
+        <td class="small">ODbL</td></tr>
+      <tr><td class="name">UNOSAT Gaza damage assessments<span class="why">Per-building
+        damage grade and a separate road-network assessment. The only source whose
+        spatial unit matches a tile natively. Authoritative but episodic — a
+        ground-truth layer, not a change detector.</span></td>
+        <td><span class="badge b-vec">vector</span></td><td class="small">building</td>
+        <td class="small">weeks–months</td><td class="small">CC BY-<b>SA</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 style="margin:34px 0 12px">How populated, and what kind of ground</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th scope="col">Source</th><th scope="col">Altitude</th>
+      <th scope="col">Res</th><th scope="col">Vintage</th><th scope="col">Licence</th></tr></thead>
+    <tbody>
+      <tr><td class="name">GHS-BUILT-C (MSZ + FUN)<span class="why">The one that
+        dissolves the mismatch instead of papering over it: 144 cells inside a 125 m
+        tile, carrying built/not, height band, and residential vs non-residential. A real
+        within-tile histogram rather than one interpolated number.</span></td>
+        <td><span class="badge b-tile">tile</span></td><td class="small">10 m</td>
+        <td class="small">E2018 only</td><td class="small">CC BY 4.0</td></tr>
+      <tr><td class="name">GHS-OBAT<span class="why">Per-building points with
+        <code>height</code>, <code>area</code> and <code>use</code>. 8,625 in the Gaza
+        AOI, 99% residential, mean height 10.78 m. The only free layer giving
+        residential/non-residential <em>and</em> height at footprint level here.</span></td>
+        <td><span class="badge b-vec">vector</span></td><td class="small">building</td>
+        <td class="small">E2020</td><td class="small">CC BY 4.0</td></tr>
+      <tr><td class="name">WorldPop Global2 R2025A<span class="why">Cleanest to automate
+        — documented REST API, one small GeoTIFF per country-year. Ship it as an
+        <em>ordinal band</em>, never a count. Self-described "alpha".</span></td>
+        <td><span class="badge b-block">block</span></td><td class="small">79×93 m</td>
+        <td class="small">2015–2030</td><td class="small">CC BY 4.0</td></tr>
+      <tr><td class="name">Microsoft Global ML Buildings<span class="why">Explicit
+        <code>GazaStrip</code> region, 280,081 footprints. Best licence of any building
+        source. Every height field is −1 here. Host moved 2026-07-24 — old URLs are on
+        borrowed time.</span></td>
+        <td><span class="badge b-vec">vector</span></td><td class="small">building</td>
+        <td class="small">2026-08-13</td><td class="small">CDLA Permissive 2.0</td></tr>
+      <tr><td class="name">Copernicus DEM GLO-30<span class="why">One 29 MB tile covers
+        both AOIs. The only source in this whole survey with neither a non-commercial
+        clause nor share-alike. Ships a per-pixel height-error mask — drive the abstain
+        logic from that, not from a constant.</span></td>
+        <td><span class="badge b-tile">tile</span></td><td class="small">30 m</td>
+        <td class="small">2010–2020</td><td class="small">Copernicus<br>free/open</td></tr>
+      <tr><td class="name">Ravikovitch 1969 soil map<span class="why">Its legend is your
+        vocabulary, verbatim: <em>Terra Rossa Soils</em>, <em>Rendzina Soils of
+        Mountains</em>, <em>Rendzina Soils of Valleys</em>. A string-level join to class
+        names. Covers Israel/Palestine only — 88.8% of the Sinai AOI is off-map.</span></td>
+        <td><span class="badge b-vec">vector</span></td><td class="small">1:250,000</td>
+        <td class="small">1969</td><td class="small">CC BY 4.0</td></tr>
+      <tr><td class="name">GSI geological maps<span class="why">Live ArcGIS
+        FeatureServers, GeoJSON export works. At 1:50,000 one map millimetre is 50 m —
+        finer than your tile. <b>Licence unverified</b>; an undocumented government
+        endpoint is not a grant of rights.</span></td>
+        <td><span class="badge b-tile">tile</span></td><td class="small">1:50,000</td>
+        <td class="small">2008–2014</td><td class="small">⚠ unverified</td></tr>
+      <tr><td class="name">GHS-SMOD, GPW, Kontur, HRSL<span class="why">SMOD over the
+        Gaza AOI is four pixels, all identical. HRSL over Sinai has two distinct values
+        across 10,476 pixels — an admin total spread flat. Kontur is frozen at Nov 2023
+        and fuses layers you already join.</span></td>
+        <td><span class="badge b-no">skip</span></td><td class="small">1 km / 30 m</td>
+        <td class="small">2020–2023</td><td class="small">various</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="kicker">Not asked for</p>
+  <h2>Five finds worth the trip</h2>
+  <div class="finds">
+    <article class="find">
+      <h3>OSM replication diffs, at 26 seconds</h3>
+      <p>The honest substitute for the social-media idea, and it is already half-built
+      here. "What did someone change on the map of this ground, 26 seconds ago" — free,
+      legal, tile-precise. <strong>The trap:</strong> a changeset's bbox spans all its
+      edits, and a Gaza query's top hit was a mobile changeset covering latitude 10–46°N,
+      longitude 16–108°E. Use Overpass <code>newer:</code> or fetch the elements.</p>
+      <p class="path">planet.openstreetmap.org/replication/minute/</p>
+    </article>
+    <article class="find">
+      <h3>OSM notes, in Arabic, at exact coordinates</h3>
+      <p>Closer to what you were reaching for than any platform: free text pinned to a
+      point, written by residents — <span dir="rtl">منزل الو هاني الزمارة</span> (the
+      Zomarah family home), <span dir="rtl">أرض البلدية</span> (municipality land). 407
+      open notes in the Gaza City bbox. A <em>stock</em>, not a pulse: 405 are older than
+      90 days.</p>
+      <p class="path">api.openstreetmap.org/api/0.6/notes.json?bbox=…</p>
+    </article>
+    <article class="find">
+      <h3>GHS-OBAT — buildings with a purpose attached</h3>
+      <p>Nobody's brief mentioned it. Overture's geometry with GHSL's attributes burned
+      on: height, area, shape factor, and <code>use</code> = residential /
+      non-residential. Raw Overture carries NULL subtype on 8,401 of 8,510 Gaza buildings
+      and zero heights; Microsoft carries zero heights across 280,081. This is the
+      dasymetric target <em>and</em> the semantic layer, in one 64 MB file per
+      country.</p>
+      <p class="path">GHS_OBAT_GPKG_PSE_E2020_R2024A_V1_0.zip · CC BY 4.0</p>
+    </article>
+    <article class="find">
+      <h3>Your OSM tags are rich in Gaza and bare in Sinai</h3>
+      <p>Gaza City: <code>surface</code> on 71% of ways, <code>lanes</code> and
+      <code>maxspeed</code> on 65% — the legacy of humanitarian mapping campaigns. North
+      Sinai: 5–6% on the same tags. So Gaza supports real capacity proxies (lane-metres,
+      throughput) and Sinai supports only topological ones. Same code, different honest
+      claims.</p>
+      <p class="path">measured live via Overpass, both AOIs</p>
+    </article>
+    <article class="find">
+      <h3>Sentinel-1 coherence, ratioed against its own baseline</h3>
+      <p>Don't wait for someone's Gaza damage feed — ARIA is event-driven, the academic
+      portal has moved to Iran and Lebanon and gates downloads, and Copernicus EMS is
+      activation-gated. The method is public and the inputs are free. Divide by the
+      seasonal median so you report anomaly: "expected 0.62 in autumn, today's pair reads
+      0.09" is defensible; a raw coherence number is not.</p>
+      <p class="path">CDSE CARD-COH6 · ASF HyP3 (8,000 credits/mo free)</p>
+    </article>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">The bill</p>
+  <h2>What each one costs you in rights</h2>
+  <p class="lede">Almost everything here is free to download. Several are not free to
+  <em>use</em> the way this project would use them, and one of those is a surprise.</p>
+
+  <div class="warn">
+    <h3>Earth Engine is not free for you</h3>
+    <p>Since 27 April 2026 the noncommercial tiers exclude for-profit entities. Commercial
+    plans start at <strong>$500/month</strong> (Basic), with a pay-as-you-go Limited plan
+    at $0.40 per EECU-hour. For two small AOIs the compute is trivial — the platform floor
+    is the cost. Dynamic World's model is Apache-2.0 on GitHub, so the cheaper path is to
+    run inference yourself on free Copernicus Sentinel-2 and never touch GEE.</p>
+  </div>
+
+  <div class="tablewrap" style="margin-top:24px"><table>
+    <thead><tr><th scope="col">Constraint</th><th scope="col">Where it bites</th></tr></thead>
+    <tbody>
+      <tr><td class="name">Non-commercial</td><td>HWSD2 (CC BY-NC-SA 3.0) — the only
+        global soil legend containing <em>Rendzic Leptosols</em> and <em>Chromic
+        Luvisols</em>, and it is closed to a commercial product. FABDEM likewise; it
+        buys ~0.7 m of building removal here and costs the licence.</td></tr>
+      <tr><td class="name">Share-alike</td><td>UNOSAT damage (CC BY-SA), OSM and Overture
+        buildings/transportation (ODbL), Mapillary imagery (CC BY-SA), adsb.lol (ODbL).
+        Share-alike reaches your derived layer.</td></tr>
+      <tr><td class="name">Permissive, notably</td><td>Overture <em>places</em> is
+        CDLA-Permissive-2.0 while every other Overture theme is ODbL. Microsoft buildings
+        are CDLA-Permissive-2.0. Copernicus DEM has neither NC nor SA.</td></tr>
+      <tr><td class="name">ToS-blocked outright</td><td>Google Maps Platform (no
+        point-in-polygon on returned coordinates; no model training/validation), TomTom
+        (no derivative products, 90-day purge), HERE (30-day cache, no "repository of
+        location assets"), Strava Metro (erase on termination), Telegram (no AI/ML use),
+        OpenSky (expunge on completion, joint IP).</td></tr>
+      <tr><td class="name">Registration required</td><td>Copernicus CDSE downloads,
+        NASA Earthdata (GPW), LSA SAF, ACLED API, Foursquare portal. All free.</td></tr>
+      <tr><td class="name">Withheld</td><td>US commercial optical over this region since
+        <b>2026-03-09</b>, indefinitely — Planet moved to case-by-case managed access.
+        Do not design anything on it. ESA data is demonstrably unaffected.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <p class="kicker">Turned back on us</p>
+  <h2>What the survey says about these AOIs</h2>
+  <p class="lede">The most useful finding was not a data source. It was what three
+  independent geological maps say about ground this project has been reasoning over for
+  months.</p>
+
+  <p><strong>Neither AOI contains the rocks half the taxonomy is built around.</strong>
+  Both are Quaternary coastal plain — alluvium, kurkar, loess, dune sand. There is no
+  marl under Gaza City and no soft carbonate under a north Sinai dune field. Then RT's
+  own output, measured:</p>
+
+<pre><span class="c"># classified pixels carrying a lithology-bearing class</span>
+aza    (1.07 km²)   <b>33.5%</b>   — of which <b>31.6% Marl</b>
+                     top classes: Shadow 28.9%, <b>MaralBadlands 28.1%</b>, House 8.9%
+sinai  (174.5 km²)   3.0%
+                     top classes: <b>Rendzina 64.9%</b>, DryGrassland 17.7%, TerraRosa 3.0%</pre>
+
+  <p style="margin-top:20px">This is the repo's own lesson arriving from outside.
+  <code>taxonomy.py</code> already records that the class owner confirmed these soil
+  labels are surface-appearance buckets, not genetic units — and four textbook priors
+  were retired after generating 9,793 false findings on exactly that mistake. So one
+  qualification on the otherwise sound advice to join a lithology map: it is right for
+  the <em>rock</em> classes, which name a lithology. Extending it to
+  <code>TerraRosa</code>/<code>Rendzina</code> would repeat the retired-priors error —
+  and those are 68% of Sinai.</p>
+
+  <div class="warn" style="margin-top:26px">
+    <h3>Three corrections to the data inventory</h3>
+    <p><strong>The "northern Sinai, Egypt" AOI is 62.5% Egypt, 25.1% open Mediterranean,
+    10.5% Gaza Strip and 2.0% Israel</strong> — two independent products agree on the sea
+    fraction to 0.1%. And 70% of its buildings are in Rafah, not Egypt, so a join keyed on
+    country silently drops two-thirds of the built environment and the geological source
+    must switch at a border running through the AOI.<br><br>
+    <strong>The Gaza AOI sits inside SoilGrids' coastal nodata hole</strong> — 79.7%
+    empty — and inside HWSD2's 100%-urban polygon. Nudging it 3–4 km inland recovers
+    both.<br><br>
+    <strong>Limestone vs dolomite is not separable, and nari is not a map unit.</strong>
+    The Geological Survey of Israel's own lithology derivative uses one combined class,
+    <code>LDM</code> "Limestone and dolostone"; querying for <code>NARI</code>,
+    <code>CALCRETE</code> or <code>CALICHE</code> returns empty at every scale, correctly
+    — nari is a surface crust overlying mapped bedrock. <code>UNDECIDABLE-NEEDS-geological-map</code>
+    is permanently unsatisfiable for nari. The map <em>does</em> split hard from soft
+    carbonate, which is what actually controls those classes — so the abstain code wants
+    renaming to <code>NEEDS-hardness-class</code>.</p>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">Recommendation</p>
+  <h2>What to wire first</h2>
+  <ol class="ranked">
+    <li><h3>Copernicus DEM GLO-30 <span class="badge b-tile">tile</span></h3>
+      <p>One 29 MB tile, no auth, no non-commercial clause, no share-alike — and it closes
+      a gap the project has documented for months. Measured height error 0.61 m over Gaza
+      and 0.45 m over Sinai gives a slope noise floor of 1.43° and 0.69°; 97–98% of tiles
+      clear a 3σ bar for tile-mean slope. Be equally clear about what it cannot do:
+      per-post aspect clears 3σ on only 31–36% of posts, and dip angle never does. Drive
+      the abstain rule from the shipped height-error mask, not a constant.</p></li>
+    <li><h3>GHS-BUILT-C 10 m + GHS-OBAT <span class="badge b-tile">tile</span> <span class="badge b-vec">vector</span></h3>
+      <p>Together they answer "how populated" without ever emitting a fabricated count —
+      144 fabric cells inside a 125 m tile, and per-building height and residential use as
+      vector. This reframes the question from a headcount to <em>what kind of ground is
+      this</em>, which is the question a segmentation raster can honestly be joined
+      against. Both CC BY 4.0; one file each covers all three AOIs.</p></li>
+    <li><h3>OSM replication stream <span class="badge b-tile">tile</span></h3>
+      <p>The cheapest thing on this list and the closest to the original intent. Adds a
+      <em>time</em> dimension to a join RT already performs, at 26-second latency, under a
+      licence the project already complies with. Mind the changeset-bbox trap.</p></li>
+    <li><h3>Sentinel-2 + Dynamic World probabilities <span class="badge b-tile">tile</span></h3>
+      <p>The only channel that both resolves a tile and is verified flowing over both
+      AOIs. It supplies the axis the project most conspicuously lacks: your raster has one
+      observation, this has ~83 a year. <code>S4-products.md</code> open question 3 already
+      asks for exactly this — <em>"Season is a switch, not a model."</em> Expect it to be
+      poor over inland Sinai; the paper names arid rangeland as its worst case.</p></li>
+    <li><h3>UNOSAT damage, for Gaza only <span class="badge b-vec">vector</span></h3>
+      <p>Do not ship a Gaza population figure without it. WorldPop's 2024 raster grows
+      straight through the war; UNOSAT's per-building assessment through 11 October 2025 is
+      the only current authoritative correction, and it joins to the same footprints as
+      pick 2. Union the damage status across all three epochs — a single-epoch read
+      understates it badly. Licence is CC BY-<b>SA</b>.</p></li>
+  </ol>
+
+  <div class="note" style="margin-top:26px"><p><strong>And one that is not a data
+  source.</strong> If the goal is validating the terra rossa / rendzina / nari / chalk
+  half of the taxonomy, these are the wrong two AOIs — every source only has something to
+  say about those classes in the Judean hills or on Carmel. A third AOI there would be
+  worth more than any layer on this page.</p></div>
+</section>
+
+<footer>
+  <p>Six research agents, dispatched in parallel on 2026-08-27 over Gaza City
+  (34.47–34.49 E, 31.49–31.51 N) and northern Sinai (34.04–34.29 E, 31.15–31.33 N).
+  Five returned; the conflict-and-damage agent was cancelled mid-run, and its ground is
+  covered here from the other five, which reached it independently.</p>
+  <p style="margin-top:10px">Findings were verified by live fetch and, where possible, by
+  reading pixels inside the AOIs. Claims that could not be confirmed are marked unverified
+  rather than repeated. The class histograms in “Turned back on us” were measured in this
+  repo against the cached mosaics.</p>
+</footer>
+
+</div>
