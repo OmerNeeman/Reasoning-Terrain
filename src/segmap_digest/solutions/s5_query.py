@@ -311,6 +311,28 @@ def _corridor(q, rest, raster: LabelRaster, ridx: RegionIndex) -> QueryResult:
         kept.append(int(c))
 
     dropped = len(seed_ids) - len(kept)
+
+    # A noise floor that removes EVERYTHING is not filtering noise, it is
+    # deleting the answer. When no component clears `CORRIDOR_MIN_AREA_M2` the
+    # floor is not applied at all: reporting "0.0% reachable" for ground that is
+    # wholly reachable through pockets a little too small for the threshold is a
+    # wrong answer wearing a precise number, and it is worse than the noise the
+    # threshold exists to suppress.
+    #
+    # The threshold is absolute (500 m2) while the AOIs it runs over span four
+    # orders of magnitude -- a 200 m2 test fixture and a 175 km2 mosaic -- so
+    # this case is not exotic. Making the floor relative to the AOI would be the
+    # deeper fix; it would also change every corridor answer on real data, so it
+    # is left as an open question in the docs rather than smuggled in here.
+    floor_applied = bool(kept) or not seed_ids
+    if not floor_applied:
+        kept = [int(c) for c in seed_ids]
+        rows = [(int(c), f"{sizes[c] * px_m2:.0f}",
+                 f"{sizes[c] * px_m2 / total:.1%}", f"{cy:.0f}", f"{cx:.0f}")
+                for c, (cy, cx) in sorted(zip(seed_ids, centres),
+                                          key=lambda t: -sizes[t[0]])]
+        dropped, dropped_m2 = 0, 0.0
+
     # The headline scalar sums the KEPT components only: pockets dropped from
     # the table as noise must not sit inside the number the table is supposed
     # to substantiate. The note states what was excluded and how much.
@@ -323,6 +345,11 @@ def _corridor(q, rest, raster: LabelRaster, ridx: RegionIndex) -> QueryResult:
         note += (f"; {dropped} reachable pocket(s) totalling {dropped_m2:.0f} m2 "
                  f"below {CORRIDOR_MIN_AREA_M2:.0f} m2 excluded as noise from "
                  f"the table and the headline figure")
+    elif not floor_applied:
+        note += (f"; every reachable component is below the "
+                 f"{CORRIDOR_MIN_AREA_M2:.0f} m2 noise floor, so the floor was "
+                 f"NOT applied -- it would have reported 0.0% for ground that is "
+                 f"reachable. Read these areas as small rather than as noise")
     return QueryResult(
         q, f"corridor ({vehicle}, seeded from {rest[0]})", rows,
         ("component", "area_m2", "tile_frac", "cy", "cx"), reachable, note,
