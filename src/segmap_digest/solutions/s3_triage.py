@@ -962,6 +962,26 @@ class Selection:
         n = len(self.selected) + len(self.rejected)
         return 1.0 - (len(self.selected) + len(self.control)) / max(n, 1)
 
+    @property
+    def n_not_applicable(self) -> int:
+        return sum(1 for s in self.rejected if s.applicability < APPLICABILITY_MIN)
+
+    @property
+    def cost_reduction_searchable(self) -> float:
+        """The saving over ground the query could actually apply to.
+
+        `cost_reduction` divides by every unit including the ones the query does
+        not apply to, so a query that is meaningless over half an AOI prints a
+        75% saving where the real figure over searchable ground is 50%. That is
+        a search that never happened, counted as a search that was skipped --
+        and this module's own docstring says a caller reporting without reading
+        `n_not_applicable` "is reporting a search that never happened".
+        """
+        live = len(self.selected) + len(self.rejected) - self.n_not_applicable
+        if live <= 0:
+            return 0.0
+        return 1.0 - (len(self.selected) + len(self.control)) / live
+
 
 def select(
     scored: list[ScoredChip],
@@ -1161,7 +1181,10 @@ def render(sel: Selection, policy: Policy, top_k: int = 15,
             f"'the question does not apply to this ground', which is a "
             f"different answer from 'nothing is here'.")
     lines += [
-        f"cost reduction       {sel.cost_reduction:.0%}",
+        f"cost reduction       {sel.cost_reduction:.0%}"
+        + (f"  (over ALL units; {sel.cost_reduction_searchable:.0%} over the "
+           f"{n - sel.n_not_applicable} units the query applies to)"
+           if compiled and sel.n_not_applicable else ""),
         f"score captured       {sel.score_captured:.0%} of total prior mass",
         "",
         "# WARNING: 'score captured' is prior mass, NOT recall. Recall requires "

@@ -261,7 +261,7 @@ def cmd_legend(args) -> None:
         ns = cn.load()
         if not ns:
             print("# no analyst notes are filled in yet; showing definitions "
-                  "only. `segmap notes --coverage` says what is missing.",
+                  "only. `segmap notes` says what is missing.",
                   file=sys.stderr)
         print(cn.legend_with_notes(ns))
         return
@@ -508,6 +508,24 @@ def cmd_solve(args) -> None:
                 from .osm import chipfeat
 
                 chipfeat.attach(cidx, r, osm)
+            if args.query:
+                # `--query` is registered on the shared `solve` parser, so s3
+                # accepted it and then answered from the BUILT-IN policy -- and
+                # printed that policy's own query text, actively confirming a
+                # compile that never happened. A flag that is accepted and
+                # ignored is worse than one that is rejected.
+                policy, sel, diag = s3_triage.run_query(
+                    cidx, args.query, budget_frac=args.budget_frac, gsd=r.gsd)
+                print(s3_triage.render(sel, policy))
+                if diag.get("frac_not_applicable"):
+                    print(f"\n# NOTE: {diag['n_not_applicable']} of "
+                          f"{diag['n_units']} units "
+                          f"({diag['frac_not_applicable']:.0%}) are ground this "
+                          f"query does not apply to -- a different answer from "
+                          f"'searched and found nothing'.", file=sys.stderr)
+                if args.save_policy:
+                    policy.to_json(args.save_policy)
+                return
             policy, sel = s3_triage.run(cidx, args.policy,
                                         budget_frac=args.budget_frac)
             missing = None
@@ -793,7 +811,10 @@ def main(argv: list[str] | None = None) -> None:
                    help="s4: what the concealment score is concealing -- the "
                         "same canopy hides a crouching person and not a truck")
     p.add_argument("--regions", action="store_true", help="s4: include per-region table")
-    p.add_argument("--query", help="s5: e.g. 'find House minarea 40' or 'corridor PavedRoad'")
+    p.add_argument("--query", help="s5: e.g. 'find House minarea 40' or "
+                                   "'corridor PavedRoad'. s3: a detection query "
+                                   "compiled into a policy, e.g. 'find missing "
+                                   "trees' -- overrides --policy")
     p.add_argument("--second", help="s6: second-date label raster (default: synthetic)")
     p.add_argument("-o", "--out", help="s4: write a PNG of the product")
     p.set_defaults(func=cmd_solve)

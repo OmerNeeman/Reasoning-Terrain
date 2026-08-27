@@ -18,8 +18,9 @@ the choice is about cost, not correctness:
     buffer is 146 billion pixel operations for a road network covering a few
     percent of the ground.
   polygons (buildings, water bodies, landuse) are filled with an even-odd
-    scanline inside their bounding box, or by `rasterio.features.rasterize` when
-    rasterio is installed, which is the same answer faster.
+    scanline inside their bounding box. (An earlier draft of this docstring
+    claimed `rasterio.features.rasterize` was used when available; it never
+    was, and rasterio is not imported here at all.)
 
 **Per-way composition, during the burn.** While the local mask for a way exists,
 its ST class histogram is accumulated. That is the whole input to S1's
@@ -327,8 +328,17 @@ def _burn_capsule(rows, cols, half_px: float, h: int, w: int,
         sc1 = min(int(math.ceil(max(ac, bc) + half_px)) + 1, local.shape[1])
         if sr1 <= sr0 or sc1 <= sc0:
             continue
-        yy = np.arange(sr0, sr1, dtype=np.float64)[:, None]
-        xx = np.arange(sc0, sc1, dtype=np.float64)[None, :]
+        # Pixel CENTRES, not indices. `to_pixels` inverts the affine, which
+        # yields edge coordinates -- rasterio's own `xy(t, 10, 20)` round-trips
+        # to (10.5, 20.5) -- so a segment lying exactly along row 102.0 is the
+        # boundary between rows 101 and 102, and measuring distance from integer
+        # indices burns the corridor half a pixel off. `_fill_polygon` below
+        # already uses `y + 0.5`; these two rasterisers disagreed with each
+        # other, and the corridor's share of ST road pixels -- the input to
+        # every S1 reference finding and to `align_report` -- was wrong because
+        # of it.
+        yy = np.arange(sr0, sr1, dtype=np.float64)[:, None] + 0.5
+        xx = np.arange(sc0, sc1, dtype=np.float64)[None, :] + 0.5
         dr, dc = br - ar, bc - ac
         if seg_len < 1e-9:
             d2 = (yy - ar) ** 2 + (xx - ac) ** 2

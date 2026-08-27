@@ -84,15 +84,31 @@ def _hist(tile: dict) -> dict[str, float]:
     return {name: frac for name, frac in tile.get("classes", [])}
 
 
-def _total_variation(a: dict[str, float], b: dict[str, float]) -> float:
-    """Half the L1 distance between two partial histograms, in [0, 1].
+def _total_variation(a: dict[str, float], b: dict[str, float],
+                     ra: float = 0.0, rb: float = 0.0) -> float:
+    """A LOWER BOUND on half the L1 distance between two partial histograms.
 
-    Classes absent from one side count as zero there, which is the correct
-    reading: the top-N truncation means a class that fell out of the list is
-    below the smallest listed fraction, not necessarily gone.
+    `a` and `b` are top-N truncated, and treating a class missing from one side
+    as zero there is wrong in the direction that invents change: a class that
+    merely fell off the list still holds mass, up to that side's residual. On a
+    tile with five near-equal classes, a FOUR PIXEL move that flips the rank-4/5
+    tie was scored 0.200 against a true 0.00098 -- a 204x overstatement, and a
+    `worth-a-look` verdict for a transition that did not happen.
+
+    So a class listed in `a` and missing from `b` contributes at least
+    `max(0, a_i - rb)`, where `rb` is `b`'s unlisted mass. That is a bound, not
+    an estimate, and it can only understate change -- which is the safe
+    direction for a detector whose job is to avoid crying wolf.
     """
-    keys = set(a) | set(b)
-    return 0.5 * sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in keys)
+    total = 0.0
+    for k in set(a) | set(b):
+        if k in a and k in b:
+            total += abs(a[k] - b[k])
+        elif k in a:
+            total += max(0.0, a[k] - rb)
+        else:
+            total += max(0.0, b[k] - ra)
+    return 0.5 * total
 
 
 def _movers(a: dict[str, float], b: dict[str, float], limit: int = 3):
@@ -157,22 +173,42 @@ def diff_tile_indices(a: dict, b: dict, registered: bool | None = None,
         if ta is None:
             continue
         ha, hb = _hist(ta), _hist(tb)
-        shift = _total_variation(ha, hb)
-        exp = 0.5 * (float(ta.get("s4", {}).get("change_volatility", 0.0))
-                     + float(tb.get("s4", {}).get("change_volatility", 0.0)))
+        ra = float(ta.get("classes_other", 0.0))
+        rb = float(tb.get("classes_other", 0.0))
+        shift = _total_variation(ha, hb, ra, rb)
+
+        # The volatility prior. `s4_products.compute` states that 0.0 is the
+        # least safe default here -- it means "any difference is real" about
+        # ground nobody has data for -- so a missing product is recorded as
+        # unknown rather than silently forgiven.
+        va = ta.get("s4", {}).get("change_volatility")
+        vb = tb.get("s4", {}).get("change_volatility")
+        known = va is not None and vb is not None
+        exp = 0.5 * (float(va) + float(vb)) if known else 0.0
         excess = shift * max(1.0 - VOLATILITY_CREDIT * exp, 0.0)
         gained, lost = _movers(ha, hb)
 
+        # The LARGER one-sided move, not half the L1. `STRUCTURAL_SHIFT` is
+        # documented as "structural classes that moved by more than this share
+        # of the tile"; halving an L1 turned that stated 5% into an effective
+        # 10%, so 6% of a tile becoming House read as unremarkable. A one-sided
+        # appearance of 6% IS a 6% move, and that is what the constant means.
         struct_share = 0.0
         if structural:
-            keys = set(ha) | set(hb)
-            struct_share = sum(abs(hb.get(k, 0.0) - ha.get(k, 0.0))
-                               for k in keys if k in structural) * 0.5
+            keys = (set(ha) | set(hb)) & structural
+            gained = sum(max(0.0, hb.get(k, 0.0) - ha.get(k, 0.0)) for k in keys)
+            lost = sum(max(0.0, ha.get(k, 0.0) - hb.get(k, 0.0)) for k in keys)
+            struct_share = max(gained, lost)
 
-        if shift < MIN_SHIFT:
-            verdict = "quiet"
-        elif struct_share >= STRUCTURAL_SHIFT:
+        # Structural FIRST. The rule is documented as firing "regardless of the
+        # excess"; testing MIN_SHIFT before it made that false, and with
+        # STRUCTURAL_SHIFT (0.05) below MIN_SHIFT (0.08) an entirely structural
+        # change in [0.05, 0.08) was unreachable. On a 256 px tile at 0.5 m/px
+        # that band is 1,310 m2 of new construction reported as `quiet`.
+        if struct_share >= STRUCTURAL_SHIFT:
             verdict = "structural"
+        elif shift < MIN_SHIFT:
+            verdict = "quiet"
         elif excess >= WORTH_A_LOOK:
             verdict = "worth-a-look"
         else:
@@ -182,6 +218,10 @@ def diff_tile_indices(a: dict, b: dict, registered: bool | None = None,
                     "shift": round(shift, 3), "expected": round(exp, 3),
                     "excess": round(excess, 3),
                     "structural": round(struct_share, 3),
+                    "structural_frac_of_shift": round(
+                        struct_share / shift, 3) if shift > 1e-9 else 0.0,
+                    "volatility_known": known,
+                    "residual": round(max(ra, rb), 3),
                     "gained": gained, "lost": lost, "verdict": verdict})
 
     out.sort(key=lambda t: (-t["excess"], -t["shift"]))
@@ -197,17 +237,27 @@ def structural_classes_from_taxonomy(threshold: float = STRUCTURAL_VOLATILITY):
     """Classes whose change means something happened, from the volatility table.
 
     Derived rather than hand-listed, so the two places that decide what is
-    volatile cannot drift apart. Falls back to a named list if the product does
-    not expose its table yet -- this module ships ahead of the change work.
-    """
-    try:
-        from .solutions.s4_products import CLASS_VOLATILITY
+    volatile cannot drift apart.
 
-        return tuple(sorted(n for n, v in CLASS_VOLATILITY.items()
-                            if v < threshold))
-    except (ImportError, AttributeError):
-        return ("House", "BrickWall", "Pavement", "PavedRoad", "DirtRoad",
-                "DirtRoadB", "Car")
+    That claim used to be false: this read `s4_products.CLASS_VOLATILITY`, which
+    does not exist -- the table is `VOLATILITY` -- so the `AttributeError`
+    fallback fired every single time and returned a hand-written list that
+    disagreed with the table it claimed to derive from. It called `Car`
+    structural, whose volatility is 0.8 because a parked car moving is not a
+    change of the ground, and it omitted every rock class, which genuinely is
+    structural. A silent fallback that always fires is worse than no fallback,
+    so there is no longer one.
+    """
+    from .solutions.s4_products import VOLATILITY, VOLATILITY_DEFAULT
+    from .taxonomy import NAMES
+
+    # Every class, not just the ones the table names: a class the table omits
+    # takes VOLATILITY_DEFAULT, and whether that default is below the threshold
+    # is a real answer, not a reason to skip it. The rock classes reach this
+    # branch, and a limestone terrace turning into rubble is as structural as a
+    # house doing it.
+    return tuple(sorted(n for n in NAMES
+                        if VOLATILITY.get(n, VOLATILITY_DEFAULT) < threshold))
 
 
 def render(diff: dict, limit: int = 20) -> str:

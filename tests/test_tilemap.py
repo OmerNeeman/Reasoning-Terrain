@@ -1,0 +1,144 @@
+"""Per-tile aggregation, the map it renders, and the traversability seam.
+
+All three shipped with no tests at all. These pin the things an adversarial
+review found broken or unguarded -- most importantly the script-tag breakout,
+because the data being embedded is OSM `name=*` text, which is to say arbitrary
+strings authored by whoever last edited that street.
+"""
+
+import json
+
+import numpy as np
+import pytest
+
+from segmap_digest import synth, tilemap, tilemap_ui, traversability
+from segmap_digest.index import build_chips, build_regions
+from segmap_digest.solutions import s1_audit
+
+
+@pytest.fixture(scope="module")
+def built():
+    r = synth.generate(size=384, seed=5)
+    ridx = build_regions(r)
+    cidx = build_chips(r, size=128)
+    rep = s1_audit.run(ridx)
+    ti = tilemap.build_tile_index(r, ridx, cidx, None, rep, [], {}, tile_px=128)
+    return r, ti
+
+
+# --- the aggregation -------------------------------------------------------
+
+def test_the_index_is_json_serialisable(built):
+    """It is embedded in a web page; a numpy scalar anywhere raises at render."""
+    _r, ti = built
+    json.dumps(ti)
+
+
+def test_the_grid_covers_the_raster(built):
+    r, ti = built
+    assert ti["n_tiles"] == ti["cols"] * ti["rows"]
+    assert ti["cols"] * ti["tile_px"] >= r.shape[1] - ti["tile_px"]
+
+
+def test_the_top_n_cap_records_what_it_dropped(built):
+    """The repo enforces 'a cap must never read as this is everything'. Without
+    the residual, `tilechange` scored a class that merely fell off the list as
+    absent and invented transitions."""
+    _r, ti = built
+    for t in ti["tiles"]:
+        listed = sum(c[1] for c in t["classes"])
+        assert "classes_other" in t
+        assert t["classes_other"] == pytest.approx(max(0.0, 1 - listed), abs=0.02)
+        if t["n_classes"] > len(t["classes"]):
+            assert t["classes_other"] > 0, "dropped classes must leave residual mass"
+
+
+def test_product_keys_track_the_solution_not_a_private_copy():
+    """A name added to `s4_products.PRODUCTS` and not here is a product that
+    silently never reaches a tile -- which is how `drainage` and `fire_fuel`
+    outlived their own deletion in six files."""
+    from segmap_digest.solutions.s4_products import PRODUCTS
+
+    assert set(PRODUCTS) <= set(tilemap.PRODUCT_KEYS)
+
+
+def test_the_ui_metric_list_matches_what_a_tile_carries():
+    """When these drift, `val()` returns 0 for every tile and the map paints a
+    uniform heat surface under a 0-1 legend, silently."""
+    keys = {m[0] for m in tilemap_ui.METRICS} - {"none", "s1", "s3"}
+    assert keys <= set(tilemap.PRODUCT_KEYS), sorted(keys - set(tilemap.PRODUCT_KEYS))
+
+
+# --- the map ---------------------------------------------------------------
+
+def test_a_street_name_cannot_break_out_of_the_script_tag():
+    """`json.dumps` does not escape `<`, and block labels are OSM `name=*` tags.
+    Anyone who can edit the map could run JS in a report that is then written to
+    out/playground/ and re-served."""
+    ti = {"tile_px": 8, "cols": 1, "rows": 1, "gsd": 1.0, "shape": [8, 8],
+          "n_tiles": 1, "tiles": [{
+              "i": 0, "r": 0, "c": 0, "bbox": [0, 0, 8, 8], "classes": [],
+              "classes_other": 0.0, "n_classes": 0,
+              "s1": {"n": 0, "max_sev": 0.0, "causes": [], "rids": []},
+              "s2": {"verdicts": [], "examples": []},
+              "s3": {"score": 0.0, "selected": False}, "s4": {},
+              "osm": {"block": 1, "n_junctions": 0, "road_frac": 0.0,
+                      "building_frac": 0.0,
+                      "block_label": "</script><img src=x onerror=alert(1)>"}}]}
+    html = tilemap_ui.render_map_section(ti, "data:image/png;base64,iVBORw0KGgo=")
+    assert "</script><img" not in html
+    assert "u003c" in html
+
+
+def test_the_map_renders_from_a_real_index(built):
+    _r, ti = built
+    html = tilemap_ui.render_map_section(ti, "data:image/png;base64,iVBORw0KGgo=")
+    assert "<section" in html and "TILES" in html
+
+
+# --- the provider seam -----------------------------------------------------
+
+def test_the_builtin_abstains_when_there_is_no_terrain():
+    """`has_terrain=False` is a legitimate answer downstream code respects, not
+    a failure -- and it is the real situation for every AOI in `data/incoming`.
+
+    The synthetic fixture DOES carry a DEM, so it tests the opposite branch;
+    stripping it is what reproduces the shipped case.
+    """
+    r = synth.generate(size=128, seed=1)
+    assert traversability.estimate(r).has_terrain is True, "fixture has a DEM"
+
+    r.dem = None
+    res = traversability.estimate(r, vehicle="wheeled")
+    assert res.has_terrain is False
+    assert res.score.dtype == np.float32
+    assert 0.0 <= float(res.score.min()) and float(res.score.max()) <= 1.0
+    assert any("DEM" in n or "slope" in n.lower() for n in res.notes)
+
+
+@pytest.mark.parametrize("bad,why", [
+    (lambda shape: np.full(shape, 2.0, "float32"), "out of [0,1]"),
+    (lambda shape: np.full(shape, np.nan, "float32"), "non-finite"),
+    (lambda shape: np.zeros((3, 3), "float32"), "wrong shape"),
+])
+def test_a_bad_provider_is_refused_at_the_seam(bad, why):
+    """The whole reason the seam validates: an external model returning 0-255,
+    or NaN for 'unmeasured', must not reach a product as if it were a score."""
+    r = synth.generate(size=64, seed=1)
+
+    class Bad(traversability.TraversabilityProvider):
+        def estimate(self, request):
+            return traversability.TraversabilityResult(
+                bad(request.labels.shape), "bad", True, [])
+
+    traversability.register_provider("bad", Bad())
+    with pytest.raises((ValueError, TypeError)):
+        traversability.estimate(r, provider="bad")
+
+
+def test_an_unknown_provider_raises_rather_than_falling_back():
+    """Silently answering from the builtin after someone asked for their own
+    model is the worst possible failure here."""
+    r = synth.generate(size=64, seed=1)
+    with pytest.raises((KeyError, ValueError)):
+        traversability.estimate(r, provider="nope-not-registered")

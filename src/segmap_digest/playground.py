@@ -160,7 +160,24 @@ ACCEPT = ".tif,.tiff,.npy,.png"
 # user to hunt down a JSON before they can see anything is the wrong default when
 # a standard mapping exists, so the playground tries the file's own tag first and
 # falls back to this, saying which it used.
-DEFAULT_CLASSES = Path(__file__).resolve().parents[2] / "examples" / "smart_terrain_class_ids.json"
+def _bundled(*relative: str) -> Path:
+    """Repo-shipped file, located without assuming an editable install.
+
+    See the same helper in `class_notes`: `parents[2]` is only right inside the
+    checkout, and under `pip install .` this default silently disappears --
+    which turns a tag-less GeoTIFF from "loads with the standard mapping" into
+    "refuses". Checked in order: repo layout, cwd, package `data/`.
+    """
+    here = Path(__file__).resolve()
+    for c in (here.parents[2].joinpath(*relative),
+              Path.cwd().joinpath(*relative),
+              here.parent.joinpath("data", relative[-1])):
+        if c.is_file():
+            return c
+    return here.parents[2].joinpath(*relative)
+
+
+DEFAULT_CLASSES = _bundled("examples", "smart_terrain_class_ids.json")
 
 
 # --- multipart -------------------------------------------------------------
@@ -206,7 +223,13 @@ def parse_multipart(body: bytes, content_type: str) -> tuple[dict[str, Part], li
         if not nm:
             continue
         fn = re.search(r'filename="([^"]*)"', headers)
-        part = Part(nm.group(1), fn.group(1) if fn else "", data.rstrip(b"\r\n"))
+        # `data.rstrip(b"\r\n")` strips a byte SET, not one CRLF: a payload whose
+        # own last bytes are 0x0A or 0x0D loses them silently. A GeoTIFF ending
+        # in either is then corrupt before `loader.load` ever sees it, with no
+        # error anywhere. Remove exactly the one delimiter CRLF.
+        if data.endswith(b"\r\n"):
+            data = data[:-2]
+        part = Part(nm.group(1), fn.group(1) if fn else "", data)
         out[nm.group(1)] = part
         if part.filename and part.data and nm.group(1) == "file":
             files.append(part)
@@ -290,10 +313,15 @@ def run_pipeline(path: Path, opts: dict, cache_dir: Path, job=None) -> Run:
     """
     steps = iter(STEPS)
 
-    def tick():
+    def tick(skipped: bool = False):
+        """Advance one step. `skipped=True` still consumes it -- so the bar
+        reaches 100% -- but says the phase did not run rather than ticking it
+        green. A progress bar that reports work it did not do is worse than one
+        that stalls."""
         if job is not None:
             label, pct = next(steps)
-            job.advance(label, pct)
+            job.advance(f"{label} — SKIPPED, no OSM layer" if skipped else label,
+                        pct)
 
     from . import digests
     from .osm import chipfeat, preview as osm_preview
@@ -388,9 +416,19 @@ def run_pipeline(path: Path, opts: dict, cache_dir: Path, job=None) -> Run:
             f"road or building overlay in S4, and no block partition. Re-run to "
             f"retry the fetch.")
         run.facts.append(("OSM", "UNAVAILABLE — see the warning above"))
-    tick()                                            # burning
-    tick()                                            # co-registration
-    tick()                                            # blocks
+    if osm is not None:
+        tick()                                        # burning
+        tick()                                        # co-registration
+        tick()                                        # blocks
+    else:
+        # These three sat OUTSIDE the guard, so a failed Overpass fetch still
+        # ticked "burning OSM ✓", "checking co-registration ✓" and
+        # "partitioning into blocks ✓" while the report's own warning said NO
+        # OSM LAYER. They still consume their steps -- the bar must reach 100%
+        # -- but they say so.
+        tick(skipped=True)
+        tick(skipped=True)
+        tick(skipped=True)
 
     if osm is not None:
         counts = ", ".join(f"{k} {v}" for k, v in osm.vectors.counts().items())
@@ -581,6 +619,34 @@ def run_pipeline(path: Path, opts: dict, cache_dir: Path, job=None) -> Run:
 
     run.seconds = time.perf_counter() - t0
     return run
+
+
+# Upper bound on a form-supplied megapixel budget. Beyond this the pipeline is
+# not slow, it is a way to exhaust the machine.
+MAX_MPX_CEILING = 400.0
+
+
+def _positive(value, default, name):
+    """A finite, positive number, or a clear refusal.
+
+    `float("nan")`, `inf` and a huge value all reached the pipeline: NaN and inf
+    disabled the megapixel crop outright, because every comparison against NaN
+    is False.
+    """
+    import math
+
+    if value is None:
+        return default
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a number; got {value!r}")
+    if not math.isfinite(v) or v <= 0:
+        raise ValueError(f"{name} must be a finite positive number; got {value!r}")
+    if name == "max_mpx" and v > MAX_MPX_CEILING:
+        raise ValueError(f"max_mpx {v:g} is above this server's ceiling of "
+                         f"{MAX_MPX_CEILING:g} Mpx. Crop first, or use the CLI.")
+    return v
 
 
 def _load_source(path: Path, gsd, classes):
@@ -1119,7 +1185,16 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.path.startswith("/run"):
             return self._send(b"not found", "text/plain", 404)
-        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        # A negative Content-Length passed the `> MAX_UPLOAD_BYTES` test and then
+        # `rfile.read(-1)` drained the socket to EOF -- the ceiling was the only
+        # memory bound in the process, and one header removed it.
+        if length < 0:
+            return self._send(page_upload(
+                "That request has no usable Content-Length.", True), code=411)
         if length > MAX_UPLOAD_BYTES:
             return self._send(page_upload(
                 f"That upload is {length / 1e6:.0f} MB; the ceiling here is "
@@ -1133,6 +1208,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(page_error(exc), code=400)
 
         tmp = Path(tempfile.mkdtemp(prefix="rt-playground-"))
+        try:
+            return self._start(parts, files, tmp)
+        except Exception as exc:                       # noqa: BLE001
+            # Anything raising between mkdtemp and Thread.start() used to leak
+            # the temp dir AND return no HTTP response at all -- socketserver
+            # just closed the connection, so the browser showed "empty reply".
+            # Reproduced with filename "..", an over-long dirpath, and
+            # min_px=inf.
+            shutil.rmtree(tmp, ignore_errors=True)
+            return self._send(page_error(exc, traceback.format_exc()), code=400)
+
+    def _start(self, parts, files, tmp: Path):
         dir_field = parts.get("dirpath")
         dir_text = dir_field.text if dir_field is not None else ""
 
@@ -1140,8 +1227,13 @@ class Handler(BaseHTTPRequestHandler):
             # One upload is a tile; several are a mosaic. Both land in the same
             # temp directory and the directory becomes the input, so there is
             # exactly one downstream path.
-            for f in files:
-                (tmp / Path(f.filename).name).write_bytes(f.data)
+            for n, f in enumerate(files):
+                # `Path(x).name` stops real traversal, but ".." and "." survive
+                # it and then IsADirectoryError escapes with no response.
+                safe = Path(f.filename).name
+                if safe in ("", ".", ".."):
+                    safe = f"upload_{n}.tif"
+                (tmp / safe).write_bytes(f.data)
             path = (tmp / Path(files[0].filename).name) if len(files) == 1 else tmp
             label = files[0].filename if len(files) == 1 else f"{len(files)} tiles"
         elif dir_text:
@@ -1207,9 +1299,13 @@ class Handler(BaseHTTPRequestHandler):
         return {
             "bbox": bbox,
             "gsd": num("gsd", None),
-            "max_mpx": num("max_mpx", DEFAULT_MAX_MPX),
-            "min_px": int(num("min_px", 12)),
-            "chip": int(num("chip", 256)),
+            # NaN is truthy and every comparison against it is False, so
+            # `max_mpx=nan` removed the crop entirely -- the only bound on how
+            # much raster the pipeline pulls into RAM.
+            "max_mpx": _positive(num("max_mpx", DEFAULT_MAX_MPX),
+                                 DEFAULT_MAX_MPX, "max_mpx"),
+            "min_px": int(_positive(num("min_px", 12), 12, "min_px")),
+            "chip": int(_positive(num("chip", 256), 256, "chip")),
             "policy": (parts["policy"].text if "policy" in parts else "settlement"),
             "vehicle": (parts["vehicle"].text if "vehicle" in parts else "wheeled"),
             "wet": "wet" in parts,

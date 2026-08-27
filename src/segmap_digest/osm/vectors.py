@@ -129,6 +129,15 @@ class OsmVectors:
         h.update(f"{self.bbox}|{len(self.ways)}".encode())
         for w in sorted(self.ways, key=lambda x: x.id):
             h.update(f"{w.id}:{sorted(w.tags.items())}:{len(w.lon)}".encode())
+            # The COORDINATES, not just how many there are. Hashing the vertex
+            # count alone made a way that MOVED hash identically, so a street
+            # redrawn 160 rows away keyed to the same block-partition cache slot
+            # and last month's blocks were served beside this month's burn --
+            # stale block_id, block_area and n_streets, and S3's block unit
+            # ranking the wrong ground. Rounded to ~1e-7 deg (about 1 cm) so a
+            # float round-trip through a GIS does not invalidate a partition.
+            h.update(np.round(w.lon, 7).tobytes())
+            h.update(np.round(w.lat, 7).tobytes())
         return h.hexdigest()[:16]
 
     def summary(self) -> str:

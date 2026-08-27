@@ -294,6 +294,24 @@ _JS = """
 """
 
 
+
+def _safe_json(obj) -> str:
+    """`json.dumps` for embedding inside a <script> block.
+
+    `json.dumps` does not escape `<`, so any string in the payload containing
+    `</script>` closes the block and everything after it is parsed as HTML. The
+    payload here carries OSM `name=*` tags -- arbitrary text authored by whoever
+    last edited that street in OpenStreetMap -- straight into a page that is
+    then written to `out/playground/` and re-served. Escaping the three
+    characters that can break out of a script context is the standard fix and
+    leaves the JSON valid.
+    """
+    return (json.dumps(obj)
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026"))
+
+
 def render_map_section(tile_index: dict, base_png_data_uri: str,
                        overlay_png_data_uri: str = "") -> str:
     """Render the interactive tile map as one self-contained ``<section>``.
@@ -363,7 +381,7 @@ def render_map_section(tile_index: dict, base_png_data_uri: str,
         f'<div class="tilemap-panel" aria-live="polite">'
         f'<p class="empty">{html.escape(empty)}</p></div>'
         f"</div>"
-        f"<script>const TILES = {json.dumps(tile_index)};</script>"
+        f"<script>const TILES = {_safe_json(tile_index)};</script>"
         f"<script>{js}</script>"
         f"</section>"
     )

@@ -12,10 +12,12 @@ This module is where that review lands. Three properties it was designed for:
     section per class, `field: value`. Not Python -- a taxonomy that needs a pull
     request to correct is a taxonomy that stays wrong. Not JSON -- nobody writes
     three paragraphs of prose inside a quoted string.
-  **Four fields are machine-read.** That is what separates this from a glossary:
-    `confused_with` feeds S2's candidate shortlist, `season` gates S6's
-    phenology reasoning, `never` is a candidate prior, `scale` can replace S2's
-    guessed area bands. The rest is prose for the model.
+  **One field is machine-read today, and three are reserved.**
+    `confused_with` feeds S2's candidate shortlist and is consumed now. `season`,
+    `never` and `scale` are recorded against planned consumers -- S6's phenology
+    gate, a candidate prior, S2's area bands -- and change no number yet. The
+    header used to claim all four were read; an analyst filling `season:` was
+    being told their work was in use when it was not.
   **Nothing is mandatory and nothing is silently dropped.** A missing file is
     today's behaviour exactly. A field nobody filled reads as unfilled rather
     than as empty. A field name the parser does not know is kept and shown, not
@@ -41,10 +43,25 @@ from .taxonomy import BY_NAME, CLASSES, NAMES
 
 # Where the notes live unless told otherwise. A repo-relative default, so a
 # checkout carries its own class definitions.
-DEFAULT_PATH = Path(
-    os.environ.get("SEGMAP_CLASS_NOTES",
-                   Path(__file__).resolve().parents[2] / "docs" / "class_notes.md")
-)
+def _bundled(*relative: str) -> Path:
+    """Locate a file that ships with the REPO rather than inside the package.
+
+    `parents[2] / "docs" / x` only resolves while the package is an editable
+    install inside its own checkout. Under a plain `pip install .` it points at
+    a path that silently does not exist, and the notes vanish with nothing
+    saying why. Checked in order: repo layout, cwd, package `data/`.
+    """
+    here = Path(__file__).resolve()
+    for c in (here.parents[2].joinpath(*relative),
+              Path.cwd().joinpath(*relative),
+              here.parent.joinpath("data", relative[-1])):
+        if c.is_file():
+            return c
+    return here.parents[2].joinpath(*relative)
+
+
+DEFAULT_PATH = Path(os.environ.get("SEGMAP_CLASS_NOTES",
+                                   _bundled("docs", "class_notes.md")))
 
 # The fields this module understands. Order is the order they are written and
 # printed in, and it is the order an expert should fill them: what it is, how you
@@ -62,9 +79,17 @@ FIELDS: tuple[str, ...] = (
     "confidence",
 )
 
-# The subset that code reads rather than the model. Changing this set changes
-# behaviour, so it is stated once, here.
-MACHINE_READ: tuple[str, ...] = ("confused_with", "season", "never", "scale")
+# The subset that code reads rather than the model.
+#
+# Only `confused_with` has a consumer today (`s2_adjudicate.candidates`, which
+# adds the named classes to the shortlist). `season`, `never` and `scale` are
+# recorded for planned consumers -- S6's phenology gate, a candidate prior, and
+# S2's area bands respectively -- and filling them moves no number yet. Saying
+# otherwise told an analyst their work was being used when it was not, which is
+# the same failure as an unattributed prior: see `taxonomy.RETIRED_PRIORS`.
+CONSUMED: tuple[str, ...] = ("confused_with",)
+PLANNED: tuple[str, ...] = ("season", "never", "scale")
+MACHINE_READ: tuple[str, ...] = CONSUMED + PLANNED
 
 CONFIDENCE_VALUES = ("high", "medium", "low")
 
@@ -366,8 +391,10 @@ def coverage(ns: NoteSet, class_area: dict[int, float] | None = None,
         head.append(f"# those classes cover {documented_area / max(total, 1e-9):.1%} "
                     f"of classified area on this map")
         head.append("# ranked by area on THIS map, so effort goes where the map is")
-    head.append("# machine-read fields: " + ", ".join(MACHINE_READ)
-                + " -- the rest is prose the model reads")
+    head.append("# read by code today: " + ", ".join(CONSUMED)
+                + "  |  recorded for planned consumers, moves no number yet: "
+                + ", ".join(PLANNED)
+                + "  |  the rest is prose the model reads")
     head.append("class\tpct_map\tfilled\tmissing")
     shown = rows if limit is None else rows[:limit]
     for area, c, note in shown:

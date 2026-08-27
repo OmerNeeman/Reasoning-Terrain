@@ -186,14 +186,23 @@ def build_tile_index(raster, ridx, cidx, osm, report, adjudications, products,
         classes: list[list] = []
         s4 = {k: 0.0 for k in PRODUCT_KEYS}
         block_id, block_label, road_frac, bldg_frac = 0, "", 0.0, 0.0
+        other, n_cls = 0.0, 0
 
         if npx:
             lab = labels[r0:r1, c0:c1]
             counted = lab if sub_valid is None else lab[sub_valid]
             hist = np.bincount(counted.ravel(), minlength=N_CLASSES)
+            n_cls = int((hist > 0).sum())
             for k in np.argsort(hist)[::-1][:TOP_CLASSES].tolist():
                 if hist[k] > 0:
                     classes.append([_class_name(k), _f(hist[k] / npx)])
+            # The mass the top-N cap drops. Without it a consumer cannot tell a
+            # class that is genuinely absent from one that merely fell off the
+            # list -- and `tilechange` scored the second as zero, turning a
+            # 4-pixel rank swap into a reported 20%-of-tile transition. The repo
+            # enforces "a cap must never read as 'this is everything'"
+            # everywhere else; this is that rule, as a number.
+            other = _f(max(0.0, 1.0 - sum(c[1] for c in classes)))
 
             for k, arr in prods.items():
                 sub = arr[r0:r1, c0:c1]
@@ -258,6 +267,8 @@ def build_tile_index(raster, ridx, cidx, osm, report, adjudications, products,
             "i": int(i), "r": int(i // cols), "c": int(i % cols),
             "bbox": [int(r0), int(c0), int(r1), int(c1)],
             "classes": classes,
+            "classes_other": other,
+            "n_classes": n_cls,
             "s1": s1,
             "s2": s2,
             # No Selection object is passed in, so a tile is never marked
