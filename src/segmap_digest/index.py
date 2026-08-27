@@ -246,6 +246,17 @@ class Chip:
     edge_density: float               # class boundary length / chip area (1/m)
     dist_to: dict[str, float]         # anchor class -> min distance in metres
     interfaces: dict[tuple[int, int], float]   # class pair -> shared length (m)
+    # Features from a joined reference map, filled by `osm.chipfeat.attach`.
+    # Empty when no OSM layer was joined -- and deliberately NOT cached with the
+    # rest of the chip index: these depend on an OSM snapshot that changes on a
+    # different clock than the raster, and keying the chip cache on both would
+    # throw away a 20-minute chip build every time somebody maps an alley.
+    osm: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def unit(self) -> str:
+        """What one row of the index is. `blocks_as_chips` overrides it."""
+        return "chip"
 
     def frac(self, class_id: int) -> float:
         return float(self.class_frac[class_id])

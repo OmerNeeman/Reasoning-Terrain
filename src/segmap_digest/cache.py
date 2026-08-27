@@ -58,7 +58,7 @@ from .taxonomy import ANCHOR_CLASSES, N_CLASSES
 # array dtype, a different meaning for an existing one. Every existing entry
 # then misses and rebuilds, which is the cheap failure. Reading a v1 layout back
 # as v2 is the expensive one.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Where indices live when nobody says otherwise. Relative to the working
 # directory, so a checkout's caches stay with the checkout.
@@ -69,7 +69,7 @@ DEFAULT_CACHE_DIR = Path(os.environ.get("SEGMAP_CACHE", ".segmap_cache"))
 # only has to be short enough to read and long enough not to collide by accident.
 KEY_CHARS = 16
 
-_KINDS = ("regions", "chips", "mosaic")
+_KINDS = ("regions", "chips", "mosaic", "blocks")
 
 
 class CacheMiss(Exception):
@@ -390,6 +390,119 @@ def _read_mosaic(slot: CacheSlot, meta: dict) -> LabelRaster:
     return LabelRaster(labels, float(meta["gsd"]), transform, crs, valid=valid)
 
 
+def _write_blocks(slot: CacheSlot, bidx, build_seconds: float) -> None:
+    """The OSM block partition.
+
+    Same split as the region index: the one big array (the block-id raster) is a
+    plain `.npy` so it can be memory-mapped, the per-block columns are an `.npz`,
+    and everything ragged -- bounding street names, way ids, the road graph --
+    is JSON, because it is small and because a human reading `meta.json` to work
+    out why a partition looks wrong should be able to see it.
+    """
+    tmp = slot.path.with_name(slot.path.name + ".tmp")
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+
+    np.save(tmp / "block_labels.npy", bidx.label_array)
+    n = len(bidx.blocks)
+    np.savez(
+        tmp / "blocks.npz",
+        id=np.array([b.id for b in bidx.blocks], dtype=np.int32),
+        area_px=np.array([b.area_px for b in bidx.blocks], dtype=np.int64),
+        bbox=np.array([b.bbox for b in bidx.blocks], dtype=np.int32).reshape(n, 4),
+        centroid=np.array([b.centroid for b in bidx.blocks],
+                           dtype=np.float32).reshape(n, 2),
+        n_valid_px=np.array([b.n_valid_px for b in bidx.blocks], dtype=np.int64),
+        hist=(np.stack([b.hist for b in bidx.blocks]) if n
+              else np.zeros((0, N_CLASSES), dtype=np.int64)),
+    )
+    ragged = {
+        "gsd": bidx.gsd, "road_px": bidx.road_px, "valid_px": bidx.valid_px,
+        "degenerate": bidx.degenerate, "note": bidx.note,
+        "cut_layers": list(bidx.cut_layers),
+        "vectors_fingerprint": bidx.vectors_fingerprint,
+        "blocks": [
+            {"way_ids": list(b.boundary_way_ids), "names": list(b.street_names),
+             "grades": list(b.grades), "junctions": list(b.junction_node_ids)}
+            for b in bidx.blocks
+        ],
+        "graph": _graph_to_json(bidx.graph),
+    }
+    (tmp / "blocks.json").write_text(json.dumps(ragged, ensure_ascii=False))
+    _finish(slot, tmp, build_seconds,
+            {"n_blocks": n, "shape": list(bidx.label_array.shape),
+             "gsd": bidx.gsd, "degenerate": bidx.degenerate})
+
+
+def _read_blocks(slot: CacheSlot, meta: dict):
+    from .osm.partition import Block, BlockIndex
+
+    lab = np.load(slot.path / "block_labels.npy", mmap_mode="r")
+    cols = np.load(slot.path / "blocks.npz")
+    ragged = json.loads((slot.path / "blocks.json").read_text())
+    blocks = []
+    for i in range(len(cols["id"])):
+        r = ragged["blocks"][i]
+        blocks.append(Block(
+            id=int(cols["id"][i]), area_px=int(cols["area_px"][i]),
+            area_m2=float(cols["area_px"][i]) * ragged["gsd"] ** 2,
+            bbox=tuple(int(v) for v in cols["bbox"][i]),
+            centroid=(float(cols["centroid"][i][0]), float(cols["centroid"][i][1])),
+            hist=np.asarray(cols["hist"][i]), n_valid_px=int(cols["n_valid_px"][i]),
+            boundary_way_ids=tuple(r["way_ids"]), street_names=tuple(r["names"]),
+            grades=tuple(r["grades"]), junction_node_ids=tuple(r["junctions"]),
+        ))
+    return BlockIndex(
+        blocks, lab, ragged["gsd"], ragged["road_px"], ragged["valid_px"],
+        degenerate=ragged["degenerate"], note=ragged["note"],
+        cut_layers=tuple(ragged["cut_layers"]),
+        graph=_graph_from_json(ragged.get("graph")),
+        vectors_fingerprint=ragged.get("vectors_fingerprint", ""),
+    )
+
+
+def _graph_to_json(graph) -> dict | None:
+    if graph is None:
+        return None
+    return {
+        "node_source": graph.node_source,
+        "intersections": [
+            [i.node_id, round(i.row, 2), round(i.col, 2), list(i.way_ids),
+             list(i.names), i.inside] for i in graph.intersections
+        ],
+        "segments": [
+            [s.id, s.way_id, s.name, s.grade, s.surface, s.node_a, s.node_b,
+             round(s.length_m, 2)] for s in graph.segments
+        ],
+    }
+
+
+def _graph_from_json(doc) -> object | None:
+    if not doc:
+        return None
+    from .osm.partition import Intersection, RoadGraph, RoadSegment
+
+    return RoadGraph(
+        [Intersection(node_id=a, row=b, col=c, way_ids=tuple(d),
+                      names=tuple(e), inside=bool(f))
+         for a, b, c, d, e, f in doc["intersections"]],
+        [RoadSegment(id=a, way_id=b, name=c, grade=d, surface=e,
+                     node_a=f, node_b=g, length_m=h)
+         for a, b, c, d, e, f, g, h in doc["segments"]],
+        doc.get("node_source", "?"),
+    )
+
+
+def block_params(cut_layers, osm_fingerprint: str, include_foot: bool = False,
+                 tags_version: int = 1) -> dict:
+    """What changes a block partition: which layers cut it, and the OSM snapshot
+    it was cut from. The fingerprint is over way ids and tag content, so
+    refetching unchanged ground is a cache HIT and one retagged street is a
+    miss."""
+    return {"cut_layers": list(cut_layers), "osm": osm_fingerprint,
+            "include_foot": bool(include_foot), "tags_version": int(tags_version)}
+
+
 def mosaic_raster(
     input_path,
     *,
@@ -472,7 +585,7 @@ def load(slot: CacheSlot):
     if meta is None:
         raise CacheMiss(str(slot.path))
     read = {"regions": _read_regions, "chips": _read_chips,
-            "mosaic": _read_mosaic}[slot.kind]
+            "mosaic": _read_mosaic, "blocks": _read_blocks}[slot.kind]
     try:
         return read(slot, meta), meta
     except (OSError, KeyError, ValueError) as exc:
@@ -481,7 +594,7 @@ def load(slot: CacheSlot):
 
 def store(slot: CacheSlot, index, build_seconds: float) -> None:
     writers = {"regions": _write_regions, "chips": _write_chips,
-               "mosaic": _write_mosaic}
+               "mosaic": _write_mosaic, "blocks": _write_blocks}
     writers[slot.kind](slot, index, build_seconds)
 
 
@@ -501,17 +614,23 @@ def get(
     cache_dir: str | Path | None = DEFAULT_CACHE_DIR,
     refresh: bool = False,
     quiet: bool = False,
+    build=None,
 ):
     """Load `kind` from cache, or build it and store it.
 
     `source=None` disables caching entirely (`--no-cache`, and the synthetic
     fixture, which builds in under a second -- caching it would buy nothing and
     add a staleness failure mode).
+
+    `build` is an explicit thunk, used by kinds whose inputs are not just the
+    raster -- the block partition needs the OSM vectors, which this module has
+    no business fetching.
     """
-    build = (lambda: build_regions(raster, min_area_px=params["min_area_px"])) \
-        if kind == "regions" else \
-        (lambda: build_chips(raster, size=params["size"], stride=params["stride"],
-                             anchors=tuple(params["anchors"])))
+    if build is None:
+        build = (lambda: build_regions(raster, min_area_px=params["min_area_px"])) \
+            if kind == "regions" else \
+            (lambda: build_chips(raster, size=params["size"], stride=params["stride"],
+                                 anchors=tuple(params["anchors"])))
 
     if source is None or cache_dir is None:
         return build()

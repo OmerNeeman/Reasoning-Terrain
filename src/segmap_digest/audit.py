@@ -172,7 +172,14 @@ class Finding:
                 f"{self.severity:.2f}\t{self.area_m2:.0f}\t{self.message}")
 
 
-def audit(ridx: RegionIndex, min_area_m2: float = 25.0) -> list[Finding]:
+def audit(ridx: RegionIndex, min_area_m2: float = 25.0,
+          osm=None, raster=None) -> list[Finding]:
+    """The priors, plus -- when an OSM layer is supplied -- the reference checks.
+
+    `osm` is an `osm.layer.OsmLayer`. It is the only input to this module that
+    is not derived from the label raster itself, and everything it produces is
+    labelled `osm-*` so a reader can tell which map a finding came from.
+    """
     findings: list[Finding] = []
     for r in ridx.regions:
         big_enough = r.area_m2 >= min_area_m2
@@ -189,6 +196,11 @@ def audit(ridx: RegionIndex, min_area_m2: float = 25.0) -> list[Finding]:
             findings += _check_oov(r, nh, min_area_m2)
         if specky:
             findings += _check_speck(r, nh)
+    if osm is not None:
+        if raster is None:
+            raise ValueError("the OSM reference checks need the raster they were "
+                             "burned onto: audit(ridx, osm=layer, raster=r)")
+        findings += _osm_findings(ridx, raster, osm, min_area_m2)
     findings.sort(key=lambda f: (-f.severity, -f.area_m2))
     return findings
 
@@ -413,6 +425,12 @@ def to_tsv(findings: list[Finding], limit: int | None = None) -> str:
     if limit and len(findings) > limit:
         lines.append(f"# NOTE: {len(findings) - limit} lower-severity findings omitted")
     return "\n".join(lines)
+
+
+def _osm_findings(ridx, raster, osm, min_area_m2: float) -> list[Finding]:
+    from .osm import checks as osm_checks
+
+    return osm_checks.findings(ridx, raster, osm, min_area_m2=min_area_m2)
 
 
 def summary(findings: list[Finding]) -> str:

@@ -251,6 +251,47 @@ def chip_table(cidx: ChipIndex, top_k: int = 4, limit: int | None = None) -> str
     return "\n".join(lines)
 
 
+def block_table(bidx, top_k: int = 3, limit: int | None = None,
+                min_area_m2: float | None = None, streets: bool = True) -> str:
+    """The OSM block partition as a table -- the cheapest useful digest there is.
+
+    On the aza AOI it is 98 rows against `l2`'s 95,170, and every row names a
+    place: a block, its area, what ST says is inside it, and the streets that
+    bound it. The point is not compression for its own sake; it is that a model
+    reading this can answer "which streets" without being handed a region table
+    it cannot address.
+    """
+    lines = [bidx.render(limit=limit, min_area_m2=min_area_m2)]
+    if streets and bidx.graph is not None and bidx.graph.segments:
+        by_name: dict[str, list] = {}
+        for seg in bidx.graph.segments:
+            # Named streets group by name. Unnamed ones group by grade AND
+            # surface: rolling every unnamed residential way into one row put
+            # "interlock/paved/unpaved" in a single surface cell, which reads as
+            # a street that changes surface three times rather than as 377
+            # different ways.
+            key = seg.name or (f"unnamed {seg.grade or 'way'}"
+                               + (f", {seg.surface}" if seg.surface else ""))
+            by_name.setdefault(key, []).append(seg)
+        rows = sorted(by_name.items(),
+                      key=lambda kv: -sum(s.length_m for s in kv[1]))
+        shown = rows if limit is None else rows[:limit]
+        lines.append("")
+        lines.append(f"# streets, by mapped length inside the AOI "
+                     f"({len(rows)} distinct)")
+        lines.append("street\tgrade\tsurface\tsegments\tlength_m")
+        for name, segs in shown:
+            grades = sorted({s.grade for s in segs if s.grade})
+            surf = sorted({s.surface for s in segs if s.surface})
+            lines.append(f"{name}\t{'/'.join(grades) or '-'}\t"
+                         f"{'/'.join(surf) or '-'}\t{len(segs)}\t"
+                         f"{sum(s.length_m for s in segs):.0f}")
+        if limit is not None and len(rows) > limit:
+            lines.append(f"# NOTE: {len(rows) - limit} streets omitted by "
+                         f"limit={limit}")
+    return "\n".join(lines)
+
+
 LEVELS = {
     "l0": "class histogram",
     "l1": "NxN grid digest",
@@ -258,4 +299,5 @@ LEVELS = {
     "l2": "region table",
     "l3": "adjacency graph",
     "chips": "chip index",
+    "blocks": "OSM road-bounded blocks (needs --osm)",
 }

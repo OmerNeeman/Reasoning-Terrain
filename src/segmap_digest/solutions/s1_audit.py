@@ -66,6 +66,11 @@ CAUSE_EXAMPLE_RIDS = 5
 SUBSTANTIVE_CHECKS = (
     "context-prior", "slope-prior", "aspect-prior",
     "lithology-isolation", "nari-geometry",
+    # Reference checks. Substantive in the strongest sense available here: they
+    # are the only ones that test a label against a statement made outside the
+    # label raster. They exist only when `run(..., osm=layer)` was given one.
+    "osm-road-missing", "osm-road-occluded", "osm-road-grade", "osm-road-extra",
+    "osm-building-missing", "osm-building-extra", "osm-water-extra",
 )
 GEOMETRY_CHECKS = ("enclosed-speck",)
 
@@ -202,7 +207,7 @@ def roll_up(findings: list[Finding]) -> list[RootCause]:
     return sorted(causes.values(), key=lambda c: -c.value)
 
 
-def _coverage(ridx: RegionIndex, min_area_m2: float) -> Coverage:
+def _coverage(ridx: RegionIndex, min_area_m2: float, osm=None) -> Coverage:
     class_area: dict[int, float] = {}
     for r in ridx.regions:
         class_area[r.class_id] = class_area.get(r.class_id, 0.0) + r.area_m2
@@ -234,6 +239,28 @@ def _coverage(ridx: RegionIndex, min_area_m2: float) -> Coverage:
         f"SCOPE -- every check ran only on regions >= min_area {min_area_m2:g} m2."
     )
 
+    osm_checks_for: dict[str, list[str]] = {}
+    if osm is not None:
+        from ..osm import checks as _osm_checks
+
+        osm_checks_for = _osm_checks.classes_covered(osm)
+        caveats.append(
+            "REFERENCE -- an OSM layer was joined: "
+            f"{len(osm.vectors.ways)} ways, "
+            f"{osm.vectors.provenance.get('fetched_utc', 'unknown fetch time')}, "
+            f"co-registration {osm.align.verdict if osm.align else 'unchecked'}. "
+            "Every `osm-*` finding is a DISAGREEMENT BETWEEN TWO MAPS, neither "
+            "of which is ground truth here. OSM completeness is unmeasured for "
+            "this AOI; `osm.tags.RELIABILITY` scales their severity and is a "
+            "guess."
+        )
+        if osm.align is not None and osm.align.verdict == "MISREGISTERED":
+            caveats.append(
+                "ABSTAINED -- the OSM reference checks did not run: the two maps "
+                f"are {osm.align.best_shift_m:.1f} m out of registration, which "
+                "is wider than most of the features being compared."
+            )
+
     checks: dict[int, list[str]] = {}
     for c in class_area:
         active: list[str] = []
@@ -250,6 +277,8 @@ def _coverage(ridx: RegionIndex, min_area_m2: float) -> Coverage:
         if BY_ID[c].lithology == "Nari":
             active.append("nari-geometry")
         active.append("enclosed-speck")
+        if osm is not None:
+            active += osm_checks_for.get(name, ())
         checks[c] = sorted(set(active))
 
     return Coverage(
@@ -279,8 +308,9 @@ def _fragmentation(ridx: RegionIndex) -> dict:
     }
 
 
-def run(ridx: RegionIndex, min_area_m2: float = 25.0) -> AuditReport:
-    findings = audit(ridx, min_area_m2=min_area_m2)
+def run(ridx: RegionIndex, min_area_m2: float = 25.0,
+        osm=None, raster=None) -> AuditReport:
+    findings = audit(ridx, min_area_m2=min_area_m2, osm=osm, raster=raster)
     findings.sort(key=review_value, reverse=True)
 
     per_class_total = np.zeros(N_CLASSES, dtype=int)
@@ -311,7 +341,7 @@ def run(ridx: RegionIndex, min_area_m2: float = 25.0) -> AuditReport:
     return AuditReport(
         findings, len(ridx.regions), by_class, by_kind,
         causes=roll_up(findings),
-        coverage=_coverage(ridx, min_area_m2),
+        coverage=_coverage(ridx, min_area_m2, osm=osm),
         fragmentation=_fragmentation(ridx),
     )
 

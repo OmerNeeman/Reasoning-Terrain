@@ -225,6 +225,92 @@ def geotiff_gsd(src) -> float:
     return float((px_x + px_y) / 2.0)
 
 
+# --- georeferencing something that arrived without any ----------------------
+#
+# A .npy or a PNG carries no transform, so the OSM join refuses it (see
+# `osm.fetch.bbox_of_raster`) -- correctly, because a join against a raster whose
+# position is unknown produces a plausible partition of the wrong ground. But a
+# user who KNOWS where their tile is can say so, and then the refusal is just
+# obstruction. This turns "here is the ground it covers" into the affine the
+# rest of the pipeline needs.
+#
+# The assumption it makes, and it is not checkable from the data: the raster is
+# north-up and covers exactly that bbox. A rotated or partially-covering raster
+# will be projected wrong, and nothing downstream will notice -- which is why
+# this is an explicit call and not a default.
+
+class SimpleAffine:
+    """Just enough of `rasterio.transform.Affine` for this pipeline.
+
+    `t * (col, row) -> (x, y)` and `~t` for the inverse. Written out rather than
+    imported so a bbox-georeferenced PNG works in an install without rasterio;
+    where rasterio IS present, `affine_from_bbox` uses the real thing.
+    """
+
+    __slots__ = ("a", "b", "c", "d", "e", "f")
+
+    def __init__(self, a, b, c, d, e, f):
+        self.a, self.b, self.c = float(a), float(b), float(c)
+        self.d, self.e, self.f = float(d), float(e), float(f)
+
+    def __mul__(self, other):
+        col, row = other
+        return (self.a * np.asarray(col) + self.b * np.asarray(row) + self.c,
+                self.d * np.asarray(col) + self.e * np.asarray(row) + self.f)
+
+    def __invert__(self):
+        det = self.a * self.e - self.b * self.d
+        if det == 0:
+            raise ZeroDivisionError("degenerate transform")
+        return SimpleAffine(self.e / det, -self.b / det,
+                            (self.b * self.f - self.c * self.e) / det,
+                            -self.d / det, self.a / det,
+                            (self.c * self.d - self.a * self.f) / det)
+
+    def __repr__(self):
+        return (f"SimpleAffine({self.a:.3e}, {self.b}, {self.c:.6f}, "
+                f"{self.d}, {self.e:.3e}, {self.f:.6f})")
+
+
+def affine_from_bbox(shape: tuple[int, int],
+                     bbox: tuple[float, float, float, float]):
+    """(s, w, n, e) in WGS84 + a raster shape -> a north-up affine.
+
+    Uses rasterio's Affine when it is installed, so the object behaves
+    identically to one read from a GeoTIFF header, and `SimpleAffine` otherwise.
+    """
+    south, west, north, east = bbox
+    h, w = shape
+    if north <= south or east <= west:
+        raise ValueError(f"bbox must be (south, west, north, east) with "
+                         f"north > south and east > west; got {bbox}")
+    px_x, px_y = (east - west) / w, (north - south) / h
+    try:
+        from rasterio.transform import Affine
+
+        return Affine(px_x, 0.0, west, 0.0, -px_y, north)
+    except ImportError:                  # pragma: no cover - exercised without geo
+        return SimpleAffine(px_x, 0.0, west, 0.0, -px_y, north)
+
+
+def georeference(raster: "LabelRaster", bbox, crs="EPSG:4326") -> "LabelRaster":
+    """Attach a transform (and a metres-per-pixel) from a stated bbox, in place."""
+    south, west, north, east = bbox
+    raster.transform = affine_from_bbox(raster.shape, bbox)
+    try:
+        from rasterio.crs import CRS
+
+        raster.crs = CRS.from_string(crs)
+    except ImportError:                  # pragma: no cover
+        raster.crs = crs
+    h, w = raster.shape
+    lat = np.radians((north + south) / 2.0)
+    px_x = (east - west) / w * 111_320.0 * float(np.cos(lat))
+    px_y = (north - south) / h * 110_540.0
+    raster.gsd = float((px_x + px_y) / 2.0)
+    return raster
+
+
 def _valid_mask(raw: np.ndarray, nodata) -> np.ndarray | None:
     if nodata is None:
         return None

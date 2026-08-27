@@ -30,6 +30,33 @@ W_CONTEXT = 0.45      # do the neighbours fit this class's co-occurrence priors
 W_MORPHOLOGY = 0.35   # does slope / aspect coherence fit
 W_GEOMETRY = 0.20     # does size / shape fit
 
+# Weight of the reference term (OSM), when there is one. The three weights above
+# are renormalised to 1 - this, rather than being changed, so that the no-OSM
+# path stays byte-for-byte what it was.
+#
+# How much of a say that buys depends on the AXIS of the evidence, not on this
+# weight -- see `osm/trust.py`, which holds the owner's policy: OSM is the
+# reference for what is there, ST is the latest word on what it looks like now.
+# Read on aza after that policy was set:
+#
+#   IDENTITY/EXISTENCE, where OSM is the reference. A polygon 70% inside a
+#     mapped corridor whose way is tagged `surface=unpaved`: `DirtRoad` scores
+#     0.74 on the reference term and `PavedRoad` 0.42 -- and the incumbent
+#     `DirtRoad` survives a challenge from `MaralSmoothRockSlopes` that beats it
+#     on the label raster alone. This is the case the join exists for.
+#   STATE, where ST is the latest. A polygon 78% under a mapped building
+#     footprint, labelled `MaralBadlands`: `House` scores 0.57 and the incumbent
+#     0.44 -- a 0.13 gap, worth 0.30 * 0.13 = 0.04 of the total, which does NOT
+#     clear SWITCH_MARGIN. Correct under the policy: a mapped footprint is what
+#     the ground USED to be, bare rubble is what ST saw later, and S1 raises it
+#     as a change candidate instead.
+#
+# So the reference term can defend a label, can put a candidate on the shortlist
+# that `class_distance` would never offer, and can flip one only when OSM is the
+# authority on that axis. All of it moves with `tags.RELIABILITY`, which is a
+# guess, and with `trust.SUPPORT`/`trust.CONTRADICT`, which is the policy.
+W_REFERENCE = 0.30
+
 # Candidates are drawn from classes within this semantic distance of the
 # incumbent, plus the dominant neighbouring classes.
 CANDIDATE_MAX_DISTANCE = 0.5
@@ -92,12 +119,25 @@ class Evidence:
     morphology: float
     geometry: float
     notes: list[str]
+    # The reference term: what an independent map (OSM) says about this
+    # candidate here. `None` -- no OSM layer, or an OSM layer with nothing to
+    # say about this candidate -- and `total` is EXACTLY the three-term score
+    # this module computed before the layer existed. That identity is a test
+    # (`test_osm.py::test_s2_unchanged_without_osm`), not a hope.
+    reference: float | None = None
 
     @property
-    def total(self) -> float:
+    def own(self) -> float:
+        """The three terms derived from the label raster itself."""
         return (W_CONTEXT * self.context
                 + W_MORPHOLOGY * self.morphology
                 + W_GEOMETRY * self.geometry)
+
+    @property
+    def total(self) -> float:
+        if self.reference is None:
+            return self.own
+        return (1.0 - W_REFERENCE) * self.own + W_REFERENCE * self.reference
 
 
 @dataclass
@@ -107,22 +147,41 @@ class Adjudication:
     ranked: list[tuple[str, Evidence]]
     verdict: str          # KEEP | SWITCH:<name> | UNDECIDABLE-NEEDS-<data>
     rationale: str
+    # What the reference map said, kept whole so the render can show it. None
+    # when no OSM layer was joined.
+    osm: object | None = None
 
     @property
     def top(self) -> str:
         return self.ranked[0][0]
 
 
-def candidates(ridx: RegionIndex, r: Region) -> list[int]:
+def candidates(ridx: RegionIndex, r: Region, osm_extra=(),
+               notes=None) -> list[int]:
     """Short list. Never the full 47 -- adjudication is a multiple-choice
     question, not a re-run of perception."""
     out = {r.class_id}
+    # An analyst's `confused_with` beats `class_distance` every time: the
+    # taxonomy metric is a guess about which classes are alike, and this is a
+    # record of which ones actually get mixed up in practice. Empty until
+    # somebody fills docs/class_notes.md, at which point the shortlist changes
+    # and this is the only place it changes.
+    if notes is not None:
+        note = notes.get(r.class_name)
+        if note:
+            for name, _why in note.confused_with:
+                out.add(cid(name))
     for c in range(N_CLASSES):
         if class_distance(r.class_id, c) <= CANDIDATE_MAX_DISTANCE:
             out.add(c)
     nh = ridx.neighbor_class_hist(r)
     for c, _ in sorted(nh.items(), key=lambda kv: -kv[1])[:3]:
         out.add(c)
+    # Whatever the reference map thinks is in play, regardless of taxonomy
+    # distance: a polygon labelled Rendzina that sits on a way tagged
+    # surface=asphalt needs PavedRoad on the shortlist, and class_distance will
+    # never put it there (soil to road is the 1.0 maximum).
+    out.update(osm_extra)
     return sorted(out)
 
 
@@ -225,14 +284,44 @@ def _geometry_score(r: Region, cand: int) -> tuple[float, list[str]]:
     return score, notes
 
 
-def adjudicate(ridx: RegionIndex, region_id: int) -> Adjudication:
+def adjudicate(ridx: RegionIndex, region_id: int,
+               osm=None, raster=None) -> Adjudication:
     r = ridx.get(region_id)
+
+    ref_ctx = None
+    osm_extra: tuple[int, ...] = ()
+    if osm is not None:
+        if raster is None:
+            raise ValueError("the reference term needs the raster the OSM layer "
+                             "was burned onto: adjudicate(..., osm=layer, raster=r)")
+        from ..osm import evidence as osm_evidence
+
+        ref_ctx = osm_evidence.region_context(ridx, raster, osm, region_id)
+        osm_extra = tuple(osm_evidence.suggested_candidates(ref_ctx))
+
+    from .. import class_notes as _class_notes
+
+    notes = _class_notes.default()
+    incumbent_note = notes.get(r.class_name)
+
     ranked: list[tuple[str, Evidence]] = []
-    for cand in candidates(ridx, r):
+    for cand in candidates(ridx, r, osm_extra=osm_extra, notes=notes):
         ctx, n1 = _context_score(ridx, r, cand)
         mor, n2 = _morphology_score(r, cand, ridx.has_terrain)
         geo, n3 = _geometry_score(r, cand)
-        ranked.append((BY_ID[cand].name, Evidence(ctx, mor, geo, n1 + n2 + n3)))
+        ref, n4 = (None, [])
+        if ref_ctx is not None:
+            from ..osm import evidence as osm_evidence
+
+            ref, n4 = osm_evidence.reference_score(ref_ctx, cand)
+        n5: list[str] = []
+        if incumbent_note is not None:
+            for name, why in incumbent_note.confused_with:
+                if name == BY_ID[cand].name and why:
+                    n5.append(f"analyst note on {r.class_name} vs {name}: {why}")
+        ranked.append((BY_ID[cand].name,
+                       Evidence(ctx, mor, geo, n1 + n2 + n3 + n4 + n5,
+                                reference=ref)))
     ranked.sort(key=lambda kv: -kv[1].total)
 
     incumbent = r.class_name
@@ -259,13 +348,27 @@ def adjudicate(ridx: RegionIndex, region_id: int) -> Adjudication:
                     f"{UNDECIDABLE_MARGIN} of the leader; this separation is not "
                     f"present in the segmentation, the DEM, or the imagery. A "
                     f"geological map settles it.",
+                    osm=ref_ctx,
                 )
 
     if top_name != incumbent and top_ev.total - inc_ev.total >= SWITCH_MARGIN:
+        driver = ""
+        if top_ev.reference is not None or inc_ev.reference is not None:
+            # Would the switch still happen on the label raster alone? If not,
+            # the reference map is what flipped it, and a reviewer has to know
+            # that -- it is the one input here that can be wrong for reasons
+            # nothing in the segmentation would reveal.
+            own_gap = top_ev.own - inc_ev.own
+            driver = (" -- driven by the OSM reference term; on the label raster "
+                      f"alone the gap is {own_gap:+.2f}, "
+                      + ("still a switch" if own_gap >= SWITCH_MARGIN
+                         else "not enough to switch"))
         return Adjudication(
             region_id, incumbent, ranked, f"SWITCH:{top_name}",
             f"{top_name} scores {top_ev.total:.2f} vs {inc_ev.total:.2f} for the "
-            f"incumbent ({', '.join(top_ev.notes[:2]) or 'no specific cue'})",
+            f"incumbent ({', '.join(top_ev.notes[:2]) or 'no specific cue'})"
+            + driver,
+            osm=ref_ctx,
         )
     return Adjudication(
         region_id, incumbent, ranked, "KEEP",
@@ -273,21 +376,32 @@ def adjudicate(ridx: RegionIndex, region_id: int) -> Adjudication:
         f"(best challenger {top_name} at {top_ev.total:.2f})"
         if top_name != incumbent else
         f"incumbent is also the best-supported candidate ({inc_ev.total:.2f})",
+        osm=ref_ctx,
     )
 
 
 def render(adj: Adjudication, top_k: int = 4) -> str:
+    has_ref = any(ev.reference is not None for _n, ev in adj.ranked)
     lines = [
         f"# region {adj.region_id}: incumbent {adj.incumbent}",
         f"# verdict: {adj.verdict}",
         f"# {adj.rationale}",
-        "candidate\ttotal\tcontext\tmorph\tgeom\tnotes",
     ]
+    if adj.osm is not None:
+        lines.append(f"# OSM says: {adj.osm.describe()}")
+        if not has_ref:
+            lines.append("# the reference term is unused here: OSM had nothing to "
+                         "say about any candidate, so this is the label raster's "
+                         "own verdict")
+    lines.append("candidate\ttotal\tcontext\tmorph\tgeom"
+                 + ("\tosm" if has_ref else "") + "\tnotes")
     for name, ev in adj.ranked[:top_k]:
         mark = " *" if name == adj.incumbent else ""
+        ref = ("\t" + ("-" if ev.reference is None else f"{ev.reference:.2f}")) \
+            if has_ref else ""
         lines.append(
             f"{name}{mark}\t{ev.total:.2f}\t{ev.context:.2f}\t{ev.morphology:.2f}\t"
-            f"{ev.geometry:.2f}\t{'; '.join(ev.notes[:2])}"
+            f"{ev.geometry:.2f}{ref}\t{'; '.join(ev.notes[:2])}"
         )
     if len(adj.ranked) > top_k:
         lines.append(f"# NOTE: {len(adj.ranked) - top_k} lower-scoring candidates omitted")
