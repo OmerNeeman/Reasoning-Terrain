@@ -36,10 +36,11 @@ per-region table.
 
 ### `concealment` is parameterised by target — concealment *of what*
 
-`concealment(raster, target="person"|"vehicle"|"structure")`. (Not yet a CLI
-flag — `cli.py` builds `**kw` for `trafficability` only, so the command line is
-stuck on the default until someone wires it; `compute` already passes it
-through.) The same maquis canopy hides a crouching
+`concealment(raster, target="person"|"vehicle"|"structure")`, and it is a CLI
+flag: `segmap solve s4 --product concealment --target {person,vehicle,structure}`
+(default `person`). `cli.py` builds `{"target": args.target}` for `concealment`
+the same way it builds `{"vehicle", "wet"}` for `trafficability`, and `compute`
+passes it through. The same maquis canopy hides a crouching
 man and does not hide a truck; the old single constant answered that question
 silently on the caller's behalf, which made half the score an unstated
 assumption wearing the costume of a terrain property. Now the size is named and

@@ -353,7 +353,7 @@ score plus a slope term. With no DEM the slope term is inert, and this tile is
 everything connects to almost everything. The number is arithmetically correct
 and analytically useless. It becomes informative when a DEM is attached, and not
 before. (On the synthetic fixture, which has a DEM, the same query returns
-63.5%.)
+60.3%.)
 
 **`count Car` prints `= 0.00` with no comment.** The tool layer that `segmap ask`
 uses returns this as `status: empty` with the sentence "Computed, and the answer

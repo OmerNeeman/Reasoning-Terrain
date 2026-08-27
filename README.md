@@ -285,10 +285,22 @@ is *there*, ST is the latest word on what it *looks like now*. Details in
 ### Class notes
 
 [`docs/class_notes.md`](docs/class_notes.md) is where an analyst writes down what
-a class name does not say. Four fields are read by code, not just by the model —
-`confused_with` feeds S2's candidate shortlist, and beats the taxonomy's guess at
-which classes are alike. `segmap notes` ranks the 47 classes by their share of
-*your* AOI against which fields are filled, so the effort goes where the map is.
+a class name does not say. **One field is read by code today: `confused_with`.**
+It feeds S2's candidate shortlist in
+[`s2_adjudicate.py`](src/segmap_digest/solutions/s2_adjudicate.py) and beats the
+taxonomy's guess at which classes are alike, and its reason text is quoted back
+in the evidence.
+
+The other three named fields — `season`, `never`, `scale` — are parsed, stored,
+shown and validated, but **nothing consumes them yet**, so filling them moves no
+number today. Write them anyway: they are the content the planned consumers (a
+phenology gate for S6, a candidate prior, measured area/elongation bands to
+replace S2's guessed ones) are waiting for, and an expert's time is easier to
+book once than twice. Just do not expect an output to change. Everything else in
+the file is prose the model reads.
+
+`segmap notes` ranks the 47 classes by their share of *your* AOI against which
+fields are filled, so the effort goes where the map is.
 
 Three things the naive versions already get right, because they're the parts
 that are easy to get wrong later:

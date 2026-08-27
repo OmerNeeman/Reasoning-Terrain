@@ -5,7 +5,7 @@ that exist. This document is the **menu**: every decision product this taxonomy
 could plausibly support, what each one costs, and which ones are honestly not
 possible. Nothing here is implemented. It exists so that someone can choose.
 
-**What we have today.** A 45-class label raster at ~0.3 m/px, the region index
+**What we have today.** A 47-class label raster at ~0.3 m/px, the region index
 (area, perimeter, compactness, elongation, neighbour graph with shared boundary
 lengths), the chip index (per-chip histograms, entropy, class-pair interface
 lengths, distance-to-anchor fields), and the taxonomy's structure — the
@@ -632,7 +632,7 @@ Belongs to S6, listed here for completeness because it is what people ask for.
 `Clutter` and `Unclassified` are the taxonomy's explicit "something is here and I
 have no word for it" classes and are the natural anchors. Single-date, this
 cannot work: there is no such thing as a disturbed-surface signature in a
-45-class label map. Two dates plus S6's phenology filter makes it a real
+47-class label map. Two dates plus S6's phenology filter makes it a real
 question — and even then the correct output is a *review queue*, not a call.
 
 - **Signal:** `Clutter`, `Unclassified`, `Shadow`; class transitions S6 flags as
@@ -663,7 +663,7 @@ it. `Terrace` means soil-covered flat — the easiest excavation on the map.
 Nari is the case that gives the argument away. Nari is a **calcrete crust**, not
 a formation, and no geological map carries it as a separate unit — it is a
 near-surface hardpan a metre or two thick over softer material. The only reasons
-to spend three of your 45 classes on it are that you must break through it, or
+to spend four of your 47 classes on it are that you must break through it, or
 that you must build on it. Both are engineering.
 
 - **Signal:** the whole rock grid via `morphology`; `TerraRosa`, `Rendzina`
@@ -920,7 +920,7 @@ signature for a patch of ground. Applications in GPS-denied positioning and in
 tile deduplication. The chip index was built as a triage unit but it is already
 the right data structure for this.
 
-- **Signal:** the full 45-class histogram per chip plus interface lengths;
+- **Signal:** the full 47-class histogram per chip plus interface lengths;
   `class_distance()` as the histogram metric so near-miss confusions do not
   break matching.
 - **Also needs:** nothing.
@@ -1051,7 +1051,7 @@ other half is not thereby fine: `built_fabric` and `change_volatility` need no
 elevation, and what they need instead — a measured block size, and a second
 acquisition — is missing in exactly the same way.
 
-**Second: the DEM validates the taxonomy itself.** Nine of the 45 classes are
+**Second: the DEM validates the taxonomy itself.** Nine of the 47 classes are
 defined by geometry that only a DEM can express, and the `PRIORS` table already
 encodes the tests:
 
@@ -1061,9 +1061,9 @@ encodes the tests:
   `aspect_variance_max=0.25` — a dip slope is a *coherent planar facet* and high
   aspect variance falsifies the label regardless of what the pixels looked like.
 - `HydromorpicSoil` requires slope 0–5° and a topographic low.
-- The four `Terrace` classes (`MaralTerrace`, `LimestoneTerrace`,
-  `DolomiteTerrace`, `NariTerrace`) are defined as "a near-flat facet
-  interrupting a slope" — a statement about a *slope profile*, which is
+- The five `Terrace` classes (`MaralTerrace`, `LimestoneTerrace`,
+  `DolomiteTerrace`, `NariTerrace`, `ChalkTerrace`) are defined as "a near-flat
+  facet interrupting a slope" — a statement about a *slope profile*, which is
   unverifiable without one.
 
 Without a DEM, those nine classes are unfalsifiable: the S1 audit cannot check
@@ -1102,17 +1102,17 @@ confidences are my own.
 
 A pure land-cover scheme does not look like this. CORINE, LCCS, and every
 national land-cover product would carry one or two bare-rock classes. This
-taxonomy spends **21 of 45 classes on rock**, and — the load-bearing point —
+taxonomy spends **23 of 47 classes on rock**, and — the load-bearing point —
 splits them primarily by **morphology**, not by lithology:
 
 | Lithology | Morphologies |
 |---|---|
-| Limestone | RockyTerrain, Boulder, StoneyTerrain, BeddedRock, RockDipSlope, Terrace (6) |
+| Limestone | RockyTerrain, Boulder, StoneyTerrain, BeddedRock, RockDipSlope, HardRockLineament, Terrace (7) |
 | Dolomite | RockyTerrain, Boulder, StoneyTerrain, Terrace (4) |
 | Nari | RockyTerrain, StoneyTerrain, RockDipSlope, Terrace (4) |
 | Basalt | RockyTerrain, Boulder, StoneyTerrain (3) |
 | Marl | Badlands, SmoothRockSlopes, Terrace (3) |
-| Chalk | SmoothRockSlopes (1) |
+| Chalk | SmoothRockSlopes, Terrace (2) |
 
 Four observations, each of which independently points the same way.
 
@@ -1144,8 +1144,8 @@ knowledge deliberately encoded, and it is knowledge about *slabs*, not strata.
 **4. Nari is the clincher.** Nari is a calcrete crust — a near-surface hardpan,
 typically a metre or two thick, that forms *over* other units. It is not a
 formation and does not appear as a separate unit on a geological map; the
-`NariRockyTerrain` definition says so, "Nari CAPS other units". Spending three of
-45 classes on a thin crust is only justified if the crust changes what you can do
+`NariRockyTerrain` definition says so, "Nari CAPS other units". Spending four of
+47 classes on a thin crust is only justified if the crust changes what you can do
 on the ground: you must break through it to dig, and it is excellent bearing
 material to build on. There is no land-cover reason and no mapping reason. There
 is an engineering reason.

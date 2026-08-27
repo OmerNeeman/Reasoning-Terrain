@@ -1,6 +1,6 @@
 # S3 — Cost-aware detection triage
 
-`segmap solve s3 --policy vehicles|structures|oov` · [`s3_triage.py`](../../src/segmap_digest/solutions/s3_triage.py)
+`segmap solve s3 --policy vehicles|structures|settlement|oov` · `segmap solve s3 --query "find missing trees"` · [`s3_triage.py`](../../src/segmap_digest/solutions/s3_triage.py)
 
 **What it is.** Use the cheap segmentation as a prior to decide which image
 chips get sent to an expensive detector. This is the solution with a direct
@@ -73,8 +73,16 @@ and a hand-written `BUILTIN` policy renders byte-identical output — it has no
 applicability model, so `render` prints no applicability column for it rather
 than printing `1.00` and passing an assumption off as a measurement.
 
-Not wired into the CLI or web UI yet (both are owned elsewhere this session);
-`run_query` is a library call today.
+`run_query` is wired into the CLI: `segmap solve s3 --query "find missing
+trees"` compiles the query into a policy and **overrides `--policy`**, so the
+compiled policy is what the run scores against — the flag used to be accepted
+and then quietly ignored, which printed the built-in policy's own query text and
+confirmed a compile that never happened. The `# NOTE:` about units this query
+does not apply to goes to stderr, so it stays out of a piped table.
+
+The web UI is still on the old surface: `webui.run_solution` calls
+`s3_triage.run(cidx, policy_name)` with a `BUILTIN` name and has no query box
+for S3.
 
 ### The compiler is deterministic, and that is temporary
 

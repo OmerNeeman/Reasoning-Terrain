@@ -4,21 +4,36 @@
 > blank field reads as unfilled, not as empty. Lines starting with `>`
 > are instructions and are ignored by the parser.
 >
-> Four fields are read by code, not just by the model:
+> **Exactly one field is read by code today: `confused_with`.** The other
+> three named below are parsed, stored, shown and validated, but no
+> solution consumes them yet — filling them changes no output. That is
+> not a reason to skip them: they are the content the planned consumers
+> are waiting for, and writing them down now is cheaper than
+> reconstructing them later. It *is* a reason not to expect a number to
+> move when you do.
 >
 > - `confused_with` — `OtherClass — how you tell them apart; ...`
->   Feeds S2's candidate shortlist. A measured confusion beats the
->   taxonomy's distance metric every time.
+>   **Consumed today**, by `solutions/s2_adjudicate.py`: it seeds S2's
+>   candidate shortlist and the reason text is quoted back in the
+>   evidence. A measured confusion beats the taxonomy's distance metric
+>   every time.
 > - `season` — does this label depend on the date the imagery was taken?
->   Feeds S6's phenology gate.
+>   **Recorded, not yet consumed.** S6 has its own hard-coded seasonal
+>   pair table (`s6_change.py`) and does not read this field.
 > - `never` — what this can never be adjacent to, or never look like.
->   A candidate prior. Admitted ONLY if it is a statement about
->   geometry, position or physics — a statement about how the thing came
->   to exist is a statement about the world, not about the label. See
+>   **Recorded, not yet consumed.** Intended as a candidate prior.
+>   Admitted ONLY if it is a statement about geometry, position or
+>   physics — a statement about how the thing came to exist is a
+>   statement about the world, not about the label. See
 >   `taxonomy.RETIRED_PRIORS` for what happened last time that line was
 >   crossed.
-> - `scale` — typical size and shape as a polygon. Replaces the guessed
->   area and elongation bands in S2.
+> - `scale` — typical size and shape as a polygon. **Recorded, not yet
+>   consumed.** Intended to replace the guessed area and elongation bands
+>   in S2, which still come from `taxonomy.PRIORS`.
+>
+> Note that `segmap notes` prints a `# machine-read fields:` line naming
+> all four. That header is `class_notes.MACHINE_READ`, which is a list of
+> intent, not of wiring; only `confused_with` is wired.
 >
 > `source` and `confidence` are not bureaucracy: an attributed claim can
 > be checked with its author, an unattributed one has to be re-derived or

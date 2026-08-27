@@ -37,8 +37,10 @@ Two hard scope decisions, both from the stakeholder, both load-bearing:
 
 The repo is standalone at `~/PycharmProjects/ST_repos/reasoning-terrain`, a
 sibling of the other ST repos. It is **not wired into `smart-terrain-v2-devenv`**,
-has **no git remote** (verified: `git remote -v` is empty), and the data is
-gitignored. Eight commits, all local.
+and the data is gitignored. It **does** have a git remote now —
+`git@github.com:OmerNeeman/Reasoning-Terrain.git`, with `master` pushed and
+`origin/master` at the same commit — so this is no longer a local-only repo.
+30 commits on `master` (`git rev-list --count master`).
 
 ---
 
@@ -421,8 +423,12 @@ for a long sinuous region whose centroid can be far from every part of it. It
 emits a note saying so, which is honest but not a fix. `distance` is pixel-to-
 pixel and correct.
 
-**12 — S4's product choice is undecided.** 37 options are catalogued in
-`docs/solutions/S4-options.md` (stated at line 879, 37 rows in the table).
+**12 — S4's product choice is undecided.** 39 options are catalogued in
+`docs/solutions/S4-options.md` — the scoring table has 39 rows and the doc states
+the count on the line directly under it ("**39 products. Pick these three:**").
+The old pointer here, "line 879, 37 rows", was wrong twice over: the table has
+grown, and line 879 is now prose in the G3 biomass section.
+
 The doc *recommends* three — GO/SLOW-GO/NO-GO, diggability, obstacle inventory —
 but explicitly says "Nothing here is implemented. It exists so that someone can
 choose." The stakeholder is still choosing.
@@ -435,14 +441,23 @@ carries two separate windows (cells for specks, m² for OOV candidates) with the
 reasoning written out at `audit.py:59-96`.
 
 **14 — Stale documentation.**
-- `docs/solutions/S4-options.md` still says **45 classes** throughout; so does
-  the `colormap()` docstring in `loader.py:321`. (`S4-products.md` and
-  `README.md` were corrected on 2026-08-25, along with README's `l0` token count
-  and its fixture region count.)
-- `QUICKSTART.md:37` describes the synthetic fixture as coherent because it puts
-  "terra rossa on hard carbonate" — the retired hypothesis, presented as a virtue.
-- `S4-options.md:420` and `:546` use rendzina/terra rossa parent-rock inference
-  as product signal.
+- The `colormap()` docstring says `"""(45, 3) uint8 RGB palette."""` — the
+  docstring is **wrong**, the array it builds is `(N_CLASSES, 3)` = `(47, 3)`.
+  It is at `loader.py:406-407`, not `loader.py:321` as this line used to say.
+  Fixing the docstring is a code change and has not been made.
+  (`docs/solutions/S4-options.md` said **45 classes** throughout and was
+  corrected on 2026-08-27; `S4-products.md` and `README.md` were corrected on
+  2026-08-25, along with README's `l0` token count and its fixture region
+  count.)
+- `QUICKSTART.md:42` (not `:37`, which is about the editable install) describes
+  the synthetic fixture as coherent because it puts "terra rossa on hard
+  carbonate" — the retired hypothesis, presented as a virtue.
+- `S4-options.md` uses rendzina/terra rossa parent-rock inference as product
+  signal in **C3 — Dust potential** (`Rendzina` as "a shallow pale calcareous
+  soil", ~line 494) and **C5 — Erosion susceptibility** (`Rendzina` as "shallow
+  soil on soft carbonate", ~line 539). The old pointers, `:420` and `:546`, no
+  longer land on either — search by section heading, the line numbers in that
+  file move every time the catalogue grows.
 - S3's module and doc still use detector-dispatch/cost framing (§8, item 6).
 
 **15 — The rename invalidated the whole index cache. Budget 24 minutes before
@@ -466,7 +481,7 @@ segmap_digest.cli ...` works either way.
 **16 — The Python package and the CLI were deliberately *not* renamed.**
 The distribution is `reasoning-terrain`, but the import package is still
 `segmap_digest` and the command is still `segmap`. Renaming those touches every
-import, the console-script entry point, the cache schema version and 124 tests,
+import, the console-script entry point, the cache schema version and 202 tests,
 and would invalidate the cache a second time — worth doing in one deliberate
 pass if the `segmap` name stops making sense, not as a side effect of a doc
 change.
@@ -478,7 +493,7 @@ change.
 ```bash
 cd ~/PycharmProjects/ST_repos/reasoning-terrain
 pip install -e '.[geo,dev]'          # numpy scipy pillow rasterio pytest
-pytest tests -q                      # 123 passed, 1 skipped in ~24 s
+pytest tests -q                      # 202 passed, 1 skipped in ~24 s (2026-08-27)
 
 segmap legend --full                 # the 47 class definitions
 segmap compare                       # zero data: synthetic tile, all levels, token counts

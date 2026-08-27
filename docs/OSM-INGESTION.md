@@ -179,7 +179,7 @@ the one input that can be wrong for reasons nothing in the segmentation reveals.
 Two insertions, and the second is the interesting one:
 
 - **new features on the chip record** — `osm.dist_road`, `osm.road_frac`,
-  `osm.building_frac`, `osm.n_intersections` — usable in the same policy-rule
+  `osm.building_frac`, `osm.n_junctions` — usable in the same policy-rule
   syntax as `dist_to.PavedRoad` and `entropy`. This is the cheap one: the LLM
   stays out of the per-chip loop, the policy stays a small auditable object, and
   the deterministic scorer gains a real settlement prior instead of inferring
@@ -199,10 +199,16 @@ OSM enters as **named overlay terms**, and the strongest is the first:
 
 | product | overlay |
 |---|---|
-| trafficability | mapped corridor = known-passable (slope still applies); buildings and walls = impassable |
+| trafficability | mapped corridor = known-passable (slope still applies); buildings and barriers = impassable |
 | concealment | ground *beside* a mapped building gains cover — not on it; a roof is not ground |
-| drainage | a mapped wadi/ditch is a channel even where the DEM is too coarse to show it, or absent |
-| fire_fuel | a footprint is not fuel |
+| built_fabric | a mapped footprint counts as anthropogenic before the density smoothing, even where the segmenter called it `Shadow`; a `built_landuse` polygon adds a mild, never-decisive settlement term |
+| change_volatility | a mapped footprint pulls `Unclassified`/`Clutter` down to built volatility — `Shadow` keeps its high score, because the shadow of that building is exactly what moves between two dates |
+
+`drainage` and `fire_fuel` used to hold the last two rows here. Both were
+retired (`feat(s4): retire drainage and fire fuel`), and `s4_products.PRODUCTS`
+is now exactly the four above. `built_fabric` and `change_volatility` replaced
+them: the waterway and landuse burns still exist in `osm/burn.py`, but no
+shipped product consumes a waterway term any more.
 
 Why trafficability matters most: on aza, 28.6% of the ground under an OSM road
 corridor is labelled `Shadow`, whose `traffic` is the 0.5 default. Without the
@@ -281,10 +287,17 @@ worth twenty on classes that never appear.
 | Summary page | ✅ [`docs/osm-layer.html`](osm-layer.html) | — |
 | Demo walkthrough | ✅ [`docs/demo.html`](demo.html) — real imagery from one run | — |
 
-Tests: `tests/test_osm.py`, 26 cases. One PRE-EXISTING failure elsewhere in the
-suite (`test_real_raster.py::test_nodata_is_not_trafficable`) — verified against
-HEAD before this work started; S5's 500 m² pocket-noise floor swallows a 200 m²
-fixture. Not touched here.
+Tests: `tests/test_osm.py`, 26 cases. The whole suite is green — 202 passed,
+1 skipped, 0 failed on 2026-08-27 (`python -m pytest tests -q`); the total moves
+as tests are added, the zero-failures part is the claim.
+
+`test_real_raster.py::test_nodata_is_not_trafficable` was listed here as a
+pre-existing failure: S5's 500 m² pocket-noise floor swallowed the 200 m²
+fixture and the query reported 0.0% reachable. It passes now. The fix
+(`fix(s5): a noise floor that removes everything is deleting the answer, not
+filtering noise`) is in `s5_query.py`: when the floor would drop *every*
+component it is not applied at all, and the output says the floor was skipped
+so the small areas read as small rather than as noise.
 
 ## 6. Risks the owner should know about
 

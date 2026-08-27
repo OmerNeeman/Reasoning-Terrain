@@ -58,10 +58,10 @@ it cannot see, and OSM can tell it one is there.
 | F-8 | A `blocks` digest level emits the block table and the street table as TSV, with the standard `# NOTE: N omitted` on any truncation. | S4 |
 | F-9 | S1 gains reference-map checks: road corridor with no ST road under it, ST road with no OSM way near it, ST road *grade* against OSM `surface`, `House` against building footprints, `Water` against waterways. Each rolls up on a cause like every other finding. | S5 |
 | F-10 | S2 gains a reference-evidence term. With no OSM layer, or where OSM is silent, S2's scores are **bit-identical to today's**. | S6 |
-| F-11 | S3 gains per-chip OSM features (`osm.dist_road`, `osm.road_frac`, `osm.building_frac`, `osm.n_intersections`) usable in policy rules, and can take the **block** as the unit of spend instead of the grid square. | S7 |
-| F-12 | S4 products may take OSM overlays: roads as known-passable in `trafficability`, buildings/walls as blockers, waterways as flow lines in `drainage`, buildings as cover in `concealment`. Every product states what the overlay changed. | S8 |
-| F-13 | Class notes: a Markdown sidecar with one section per class and named fields; `confused_with`, `season` and `never` are machine-read, the rest is prose for the model. Missing file = today's behaviour. | S9 |
-| F-14 | `segmap notes --coverage` ranks the 47 classes by pixel share in the loaded AOI against which notes fields are filled, so effort goes where the map actually is. | S9 |
+| F-11 | S3 gains per-chip OSM features (`osm.dist_road`, `osm.road_frac`, `osm.building_frac`, `osm.n_junctions`) usable in policy rules, and can take the **block** as the unit of spend instead of the grid square. | S7 |
+| F-12 | S4 products may take OSM overlays: roads as known-passable in `trafficability`, buildings/barriers as blockers there, buildings as cover *beside* them in `concealment`, footprints and `built_landuse` in `built_fabric`, footprints resolving `Unclassified`/`Clutter` in `change_volatility`. (`drainage` and `fire_fuel`, the two products this row used to name, were retired -- `s4_products.PRODUCTS` is now exactly those four.) Every product states what the overlay changed. | S8 |
+| F-13 | Class notes: a Markdown sidecar with one section per class and named fields. Of these, **only `confused_with` has a consumer today** -- `s2_adjudicate` uses it for the candidate shortlist and quotes its reason text. `season`, `never` and `scale` are recorded for planned consumers and read by nothing yet; the rest is prose for the model. Missing file = today's behaviour. | S9 |
+| F-14 | Bare `segmap notes` (with `-i`, and no `--class`/`--check`/`--template`) ranks the 47 classes by pixel share in the loaded AOI against which notes fields are filled, so effort goes where the map actually is. Coverage is the default, not a flag. | S9 |
 
 ## N — non-functional requirements
 
@@ -79,7 +79,7 @@ it cannot see, and OSM can tell it one is there.
 | U-1 | Every OSM-derived number in any output is marked as OSM-derived. A reader must never have to guess which map a figure came from. | S4–S8 |
 | U-2 | Blocks are named by their bounding streets when OSM has names (`block 84 — bounded by شارع النخيل, شارع الشعف`), by grade when it does not (`bounded by 3 residential ways`), and by neither only when the block touches no named or graded way. | S3 |
 | U-3 | An OSM fetch failure (offline, rate-limited, empty result) is a clear message naming what to do — not a stack trace, and not a silent empty layer that reads as "OSM says there is nothing here". | S1 |
-| U-4 | `segmap osm --preview` writes a PNG of the road corridor and block partition over the label colourmap, because a partition is a thing you check by looking at it. | S3 |
+| U-4 | `segmap osm -o/--out PATH.png` writes a PNG of the road corridor and block partition over the label colourmap, because a partition is a thing you check by looking at it. | S3 |
 
 ## Stages
 
