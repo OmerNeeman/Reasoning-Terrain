@@ -333,7 +333,7 @@ ALGOS = {
 },
 "s4": {
  "title": "Derived decision products",
- "cmd": "segmap solve s4 --product trafficability|concealment|drainage|fire_fuel",
+ "cmd": "segmap solve s4 --product trafficability|concealment|built_fabric|change_volatility",
  "one_liner": "The many-to-one mapping from 47 classes + slope + season into what "
               "someone actually asks for.",
  "why": "A model helps at <i>authoring</i> time — hand-writing 47×N lookup tables "
@@ -343,9 +343,11 @@ ALGOS = {
  "steps": [
   ("Look up a per-class base score", "One number per class per product, from a "
    "checked-in table."),
-  ("Apply the modifiers", "Vehicle type (wheeled / tracked / foot) and season "
-   "(wet / dry) shift the scores — a clay soil that carries a wheeled vehicle in "
-   "August does not in February."),
+  ("Apply the modifiers", "Vehicle type (wheeled / tracked / foot), season "
+   "(wet / dry) and, for concealment, the size of the target being hidden "
+   "(person / vehicle / structure) shift the scores — a clay soil that carries a "
+   "wheeled vehicle in August does not in February, and canopy that hides a man "
+   "does not hide a truck."),
   ("Penalise by slope and roughness", "Where a DEM exists. Without one this step "
    "is skipped and the product is a class lookup only."),
   ("Emit a 0..1 raster", "Plus a summary by superclass, so the shape of the "
@@ -663,15 +665,37 @@ to prevent.</div>
     for name, kw, blurb in [
         ("trafficability", {"vehicle": "wheeled"},
          "Can a wheeled vehicle cross this pixel? Bright = yes."),
-        ("concealment", {}, "How much cover does this ground give? Bright = more."),
-        ("drainage", {}, "Where does water go and collect? Bright = drains freely."),
-        ("fire_fuel", {}, "How much burnable material? Bright = more fuel."),
+        ("concealment", {"target": "person"},
+         "How well is a <i>person-sized</i> target hidden from above? Bright = "
+         "better hidden. The size is named on purpose: the same maquis canopy "
+         "that hides a crouching man does not hide a truck, and every constant "
+         "in this product was quoted for the person."),
+        ("built_fabric", {},
+         "What kind of ground is this — bare-natural (dark) to dense-urban "
+         "(bright)? The honest per-tile answer to “how populated is this”: "
+         "it is read off the raster at the resolution the ground was actually "
+         "seen at, not off a 100 m population grid that is coarser than a city "
+         "block and that counts where people are <i>registered</i> rather than "
+         "what the ground <i>is</i>. Two terms, blended not summed: what is "
+         "under this pixel, and how built-up its 50 m neighbourhood is. That "
+         "window is the load-bearing constant — narrow it and an isolated shed "
+         "reads as a city, widen it and a village smears into the desert."),
+        ("change_volatility", {},
+         "How much was this ground always going to look different between two "
+         "dates anyway — from season, phenology and illumination rather than "
+         "from anything happening? Bright = a difference here means little "
+         "(grassland between wet and dry season, a shadow that walked with the "
+         "sun); dark = a difference here is a report (masonry, seal, bedrock). "
+         "It is the baseline a change detector has to beat. <b>Unvalidated</b>: "
+         "every number is read off a class definition, and it exists to serve "
+         "change-detection work that has not been done yet."),
     ]:
         arr = s4_products.compute(r, name, **kw)
         summ = s4_products.summarise(r, arr, None)
         head = summ.splitlines()[0] if summ else ""
+        arg = f" ({next(iter(kw.values()))})" if kw else ""
         prods.append(_fig(ramp_png(arr, step, valid),
-                          f"<b>{name}</b>{' (' + kw['vehicle'] + ')' if kw else ''} — "
+                          f"<b>{name}</b>{arg} — "
                           f"{blurb}<br><span class='mono'>{_e(head.lstrip('# '))}</span>"))
 
     dry = s4_products.compute(r, "trafficability", vehicle="wheeled", wet=False)

@@ -14,12 +14,19 @@ co-occurrence `PRIORS`.
 
 **What we do not have.** No RGB. No DEM — so every slope, elevation, aspect and
 `aspect_circvar` field in `Region` is currently zero, and `_slope()` in
-`s4_products.py` returns a zero array. Read that carefully: **three of the four
-shipped products are running with their topographic term silently disabled.**
-`trafficability` is currently a per-class lookup, `drainage` is currently 0.45 ×
-1.0 + 0.30 × 0.5 + 0.25 × holding, and `concealment` has no roughness term. No
-acquisition date, no rainfall series, no soil-drainage map, no geological map,
-no canopy height, no second date.
+`s4_products.py` returns a zero array. Read that carefully: **two of the four
+shipped products carry a topographic term and both are multiplying by zero.**
+`trafficability` is currently a per-class lookup, and `concealment` has neither
+its roughness term nor its relief-amplitude gate — measured on the sinai tile it
+means 0.002 for a person-sized target, i.e. nothing. The other two,
+`built_fabric` and `change_volatility`, never read elevation at all, which is why
+they run undegraded here — and running undegraded is not the same as being right.
+`built_fabric`'s answer is dominated by a 50 m smoothing window nobody has
+measured against this AOI, and `change_volatility` is unvalidated end to end and
+needs a second acquisition to stop being prose. No acquisition date, no rainfall
+series, no soil-drainage map, no geological map, no canopy height, no second
+date — and that last one is now blocking a shipped product rather than a
+hypothetical one.
 
 Feasibility is stated against *that* baseline, not against the fixture — the
 synthetic tile in `synth.py` has a DEM and the real tiles do not.
@@ -328,16 +335,125 @@ building heights; adjacent to `Clutter` it distinguishes a pylon from a tarpauli
 
 # C · Hydrology & surface conditions
 
-### C1 — Ponding and poor drainage
-*"Where will water sit after rain?"*
+### C1 — Surface condition: fabric, volatility, and ponding
+*"What kind of ground is this, how much of it was going to look different next
+season regardless — and where does water still stand after rain?"*
 
-The shipped `drainage` product is, without a DEM, 0.45 × flat(0) + 0.30 × 0.5 +
-0.25 × holding — i.e. a constant plus a class mask. That is not a drainage
-product, it is a soil lookup with two decorative terms. Real ponding is
-depression-filling on a DEM; the labels contribute the water-holding half and,
-usefully, an independent check: `HydromorpicSoil` is *defined* as seasonally
-waterlogged ground in closed depressions, so it is both an input and a truth
-proxy.
+This slot used to be an argument with the shipped `drainage` product: without a
+DEM it evaluated to 0.45 × flat(0) + 0.30 × 0.5 + 0.25 × holding, a constant plus
+a class mask, a soil lookup with two decorative terms wearing a hydrology name.
+That product has been removed rather than left to rot — nothing in this project
+consumed it, and a plausible-looking constant is worse than an absent product
+because it survives review. Two products took its place in the shipped set.
+Neither is hydrology; both are surface-condition questions the labels can answer
+*without* elevation, which is exactly why they could ship on these AOIs and the
+ponding product could not. The ponding question is still on the menu and is
+still the third block below.
+
+**C1a — `built_fabric`: bare-natural → dense-urban.**
+*"How populated is this ground?"* — asked of the ground rather than of a census.
+A per-class ordinal (bare 0.0, natural vegetation 0.1, agriculture 0.35, sealed
+surface 0.6, clutter 0.7, roof and wall 0.9) blended with the locally smoothed
+anthropogenic area fraction. The interesting claim is what it beats: a 100 m
+population grid is coarser than a city block, cannot tell a courtyard from a
+field, and counts people where they are *registered* rather than where the
+buildings are. This is read off the ground at the segmenter's own GSD, so it says
+what the ground *is* and never what its population *is* — and must not be
+reported as the latter.
+
+- **Signal:** `House`, `BrickWall`, `Clutter`, `Pavement`, `PavedRoad`, `Car`;
+  `DirtRoad`/`DirtRoadB` as a weaker statement than a kerb; the three agriculture
+  classes as the middle step; the `DEGRADATION_SERIES` and bare soil/rock as the
+  natural end. OSM building footprints join the density term before smoothing;
+  OSM `built_landuse` corroborates at +0.15 and never carries the answer.
+- **Also needs:** nothing to run. To *calibrate*: building-footprint area per
+  hectare, which OSM already gives us unevenly, and the block-size distribution
+  of the settlements in the AOI, which nobody has measured.
+- **Feasibility:** NOW. No topographic term at all, which is why it is the only
+  new product that is not degraded on the tiles we actually hold.
+- **Output:** continuous [0,1]. Almost certainly better as named bands (bare /
+  rural / peri-urban / urban core) with thresholds a person owns — see Open
+  question 1 in [S4-products.md](S4-products.md), which is the same argument.
+- **Validate:** V2 is unusually strong here — `House` is a record of where people
+  decided to build, so a fabric map that scores settled ground low is wrong
+  rather than interesting. Then rank correlation against OSM footprint area per
+  hectare over tiles: independent, incomplete, and free. V5 and V7 on the window.
+- **Open questions.**
+  1. **`FABRIC_WINDOW_M` = 50 m is the load-bearing constant and it is a guess.**
+     The class term alone is a recolour of the label map; everything that makes
+     this a *fabric* score happens inside that window. Narrow it (~10 m) and the
+     density term replays the class map — an isolated shed is dense urban again.
+     Widen it (~500 m) and a village smears into the desert and the product
+     degrades into the coarse population grid it exists to beat. **Measured on
+     the aza tile (8192², 0.122 m/px), sweeping the window 10 → 500 m moves the
+     AOI mean by 0.016 (0.214 → 0.205) and moves everything else:** p10 goes
+     0.000 → 0.071, p90 goes 0.744 → 0.562, and the share of the tile scoring
+     above 0.5 falls from 18.3% to 12.7%. Anyone who runs V5 on the mean will
+     conclude this constant does not matter. It is the tails that carry the
+     product, and the tails are where it is decided whether a block is a
+     settlement.
+  2. **It is an ordinal, not a density.** The gaps between the steps were chosen
+     so the ordering survives the blend, not because 0.35 is a measured property
+     of an orchard. Nothing here is calibrated against anything.
+  3. **The agriculture step is the one most likely to be wrong.** An intensive
+     greenhouse belt and a rainfed olive terrace are both 0.35, and they are not
+     the same statement about human presence.
+  4. **Is one number the right output?** Two bands — what is under your feet, and
+     what kind of place you are standing in — are what the blend is averaging
+     over, and a caller who wants "bare ground inside a city" currently has to
+     infer it from a mid-scale score that also means "a shed in the desert".
+
+**C1b — `change_volatility`: the baseline a change detector must beat.**
+*"How much of a difference between two dates was always going to be there?"*
+Season, phenology and illumination move the label on their own. This is the null
+hypothesis: on 0.9 ground (grassland between wet and dry season, a shadow that
+walked with the sun) a label difference is what you should have expected, and on
+0.05 ground (masonry, seal, bedrock) the same difference is a report. **It is
+unvalidated, and it exists to serve change-detection work that has not been done
+yet** — it is infrastructure for S6, not a product anyone should be shown alone.
+
+- **Signal:** the taxonomy's own words. `GreenGrassland`/`DryGrassland` are
+  defined as the same ground in two seasons; `Shadow` is defined as an
+  illumination artifact and is the entry that matters most, because shadow edges
+  are where a naive detector manufactures most of its false positives; `Car` is
+  gone next week; the agriculture classes walk a full crop cycle inside one year;
+  `Unclassified`/`Clutter` at 0.5 is the *segmenter* flipping, not the ground.
+- **Also needs:** a second co-registered acquisition — to validate, not to run.
+  It runs on one date because it is a prior over the taxonomy rather than a
+  measurement of anything.
+- **Feasibility:** NOW to compute, GAP to believe.
+- **Output:** continuous [0,1], consumed as a per-pixel threshold or a
+  denominator inside S6. Not a map to hand anyone.
+- **Validate:** **this is the cheapest validation story in the whole document and
+  it has not been built.** Two dates over ground known not to have changed,
+  cross-tabulate the label pairs per class, read the off-diagonal mass — that is
+  a *measurement* of this table with no analyst, no polygons, and no expert key.
+  Every number in it is currently prose and this is how it stops being prose.
+- **Open questions.**
+  1. **A per-class scalar cannot say the thing that matters, because volatility
+     lives in *pairs*.** `GreenGrassland` → `DryGrassland` is the calendar;
+     `GreenGrassland` → `House` is an event. Both start on a 0.9 pixel. The right
+     object is probably a 47 × 47 transition prior, which S6 needs anyway, and
+     this table is its diagonal-ish summary.
+  2. **It mixes terrain volatility with model volatility.** `Unclassified` and
+     `Clutter` at 0.5 describe the classifier changing its mind, not the ground
+     changing. They share a raster because a detector has to survive both, but
+     they are two different quantities and someone will eventually want them
+     split.
+  3. **No date, no season, no interval.** The same grassland pixel is not equally
+     volatile across March→April and March→September, and this table cannot tell
+     the two apart. Volatility is a function of the *pair* of dates, and there
+     are no dates in the pipeline.
+  4. **Measured on the sinai tile it is the only product that varies freely**
+     (mean 0.29, p10 0.20, p90 0.90). That is a statement about the table, not
+     evidence for it — a table of invented numbers spread across a real class
+     histogram will always look lively.
+
+**C1c — ponding and poor drainage, still on the menu.**
+*"Where will water sit after rain?"* Real ponding is depression-filling on a DEM;
+the labels contribute the water-holding half and, usefully, an independent check:
+`HydromorpicSoil` is *defined* as seasonally waterlogged ground in closed
+depressions, so it is both an input and a truth proxy.
 
 - **Signal:** `HydromorpicSoil`, `ClayeyDeepSoil`, `Clayeysoil`, `Water`;
   `MaralTerrace` and the other `Terrace` classes as flat facets that hold water.
@@ -347,6 +463,9 @@ proxy.
 - **Validate:** V6 (monotone downhill); and the strongest test available —
   predicted ponding should coincide with `HydromorpicSoil` polygons the model
   never saw, which turns a taxonomy class into free validation data.
+- **Open question.** Whether anyone wants it. The last version of this shipped
+  and nothing consumed it, which is why it was removed; a DEM would make it a
+  real product and would not by itself make it a wanted one.
 
 ### C2 — Ephemeral channel / wadi network
 *"Where does the water run, and where do I cross?"*
@@ -434,8 +553,12 @@ everything else, check whether it independently predicts where the badlands are.
 ### D1 — Fire fuel load
 *"How much is there to burn?"*
 
-The shipped product. The `DEGRADATION_SERIES` is a fuel-model ladder as well as a
-concealment ladder: `DryGrassland` is fast-spreading fine fuel with low total
+No longer shipped. A `fire_fuel` product existed and was removed with `drainage`,
+for the same reason: nothing in this project consumes it, and this is a
+Sinai/Negev/Levant mobility-and-observation pipeline, not a wildfire one. It
+stays on this menu because the taxonomy supports it unusually well, and if
+somebody ever does want it the road back is short. The `DEGRADATION_SERIES` is a
+fuel-model ladder as well as a concealment ladder: `DryGrassland` is fast-spreading fine fuel with low total
 load, `Maquis` is high-load slow-ignition sclerophyll, `Batha` and `Garigue` sit
 between. This is the standard Mediterranean fuel problem and the classes map
 almost one-to-one onto published fuel models — so unusually for this document,
@@ -845,9 +968,10 @@ DEM 0.5, DEM+ 0.4, GAP 0.2).
 | B1 | Overhead concealment | observation | 5 | NOW\* | 4.0 | Exists; pair with B4 |
 | A3 | Least-cost route | mobility | 5 | NOW\* | 4.0 | Next, on top of A2 |
 | E2 | Bearing / hardstanding | engineering | 4 | NOW | 4.0 | Cheap, strong V2 |
-| F1 | Built-up extent | land use | 4 | NOW | 4.0 | Cheap, uncontroversial |
+| C1a | Built fabric raster | land use | 4 | NOW | 4.0 | Exists; the window constant is unmeasured |
+| F1 | Built-up extent | land use | 4 | NOW | 4.0 | The vector upgrade to shipped `built_fabric` |
 | H2 | Terrain fingerprint | navigation | 4 | NOW | 4.0 | Only product with a real metric |
-| D1 | Fire fuel load | hazard | 4 | NOW\* | 3.2 | Exists; blocked on season |
+| D1 | Fire fuel load | hazard | 4 | NOW\* | 3.2 | Removed from the shipped set; nobody consumed it |
 | C3 | Dust potential | hydrology | 3 | NOW | 3.0 | Underrated, needs no DEM |
 | E3 | Aggregate siting | engineering | 3 | NOW | 3.0 | Niche but decisive when needed |
 | H3 | Auto-gazetteer / brief | navigation | 3 | NOW | 3.0 | Cheapest thing here |
@@ -856,11 +980,12 @@ DEM 0.5, DEM+ 0.4, GAP 0.2).
 | F4 | Degradation index | land use | 3 | NOW | 3.0 | Testable distance-decay |
 | G1 | Habitat fragmentation | ecology | 3 | NOW | 3.0 | Pure region-index arithmetic |
 | A4 | Chokepoints & defiles | mobility | 5 | NOW\*/DEM | 2.8 | Half of it needs a DEM |
+| C1b | Change volatility prior | change | 4 | NOW/GAP | 2.8 | Exists, unvalidated; S6 is its only consumer |
 | C4 | Water point inventory | hydrology | 3 | NOW | 2.7 | Season caveat |
 | B2 | LOS / intervisibility | observation | 5 | DEM+ | 2.0 | **Most-wanted, blocked** |
 | B5 | Concealed approach | observation | 5 | NOW\*/DEM+ | 2.0 | Needs B2 to be real |
 | B4 | Cover from fire | observation | 4 | DEM | 2.0 | Ship with B1 or rename B1 |
-| C1 | Ponding / drainage | hydrology | 4 | DEM | 2.0 | Exists but is a stub today |
+| C1c | Ponding / drainage | hydrology | 4 | DEM | 2.0 | Stub removed; unbuilt, and unwanted so far |
 | E5 | HLS / DZ siting | engineering | 4 | DEM | 2.0 | Three of four terms ready |
 | G2 | Ecological corridors | ecology | 2 | NOW | 2.0 | Same engine as A3 |
 | C2 | Wadi network | hydrology | 4 | NOW\*/DEM | 2.0 | Crude proxy now |
@@ -876,7 +1001,7 @@ DEM 0.5, DEM+ 0.4, GAP 0.2).
 | D2 | Fire spread | hazard | 3 | GAP | 0.6 | Ship the firebreak map only |
 | G3 | Biomass / carbon | ecology | 2 | GAP | 0.4 | Do not build |
 
-**37 products. Pick these three:**
+**39 products. Pick these three:**
 
 1. **A2 — GO/SLOW-GO/NO-GO.** Not new work; it is A1 with the output question
    answered. It converts an unfalsifiable float into three named classes an
@@ -906,21 +1031,25 @@ Counting against the tiers above:
 
 | Input | Products it unlocks outright | Products it materially upgrades | Total touched |
 |---|---|---|---|
-| **DEM** (+ derived viewshed, flow accumulation) | **11** — A4, B2, B3, B4, C1, C2, C5, D3, E4, E5, B5 | **6** — A1, A2, A3, D2, D4, A6 | **17 of 37** |
+| **DEM** (+ derived viewshed, flow accumulation) | **11** — A4, B2, B3, B4, C1c, C2, C5, D3, E4, E5, B5 | **6** — A1, A2, A3, D2, D4, A6 | **17 of 39** |
 | Acquisition date + sun angle | 2 — B6, part of F3 | 3 — D1, C4, A6 | 5 |
 | Rainfall series | 1 — A6 | 3 — C5, D4, F4 | 4 |
 | Geological map | 0 | 3 — E3, D3, plus S2 label accuracy | 3 |
-| Second acquisition | 1 — D5 | 3 — F1, F2, F4 | 4 |
+| Second acquisition | 1 — D5 | 4 — C1b, F1, F2, F4 | 5 |
 | Canopy height | 1 — G3 | 2 — B1, B2 | 3 |
 
 The gap is not close, and the raw count understates it, for three reasons.
 
-**First: the DEM is not an enhancement, it is a missing operand.** Three of the
+**First: the DEM is not an enhancement, it is a missing operand.** Two of the
 four shipped products already have a slope term wired in and it is multiplying by
-a zero array. `drainage` without elevation reduces to a soil mask with two
-constant terms — it is presently answering a different question than its name
-claims. This is not "we could do better with a DEM"; it is "one product is
-currently mislabelled and two are running on half their inputs".
+a zero array. `trafficability` degrades to a per-class lookup, and `concealment`
+loses both its roughness term and its relief-amplitude gate — on the sinai tile
+that leaves it at a mean of 0.002 for a person-sized target, which is a raster
+of zeros with a valid-looking number attached. This is not "we could do better
+with a DEM"; it is "half the shipped set is running on half its inputs". The
+other half is not thereby fine: `built_fabric` and `change_volatility` need no
+elevation, and what they need instead — a measured block size, and a second
+acquisition — is missing in exactly the same way.
 
 **Second: the DEM validates the taxonomy itself.** Nine of the 45 classes are
 defined by geometry that only a DEM can express, and the `PRIORS` table already

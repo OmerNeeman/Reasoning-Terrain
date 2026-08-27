@@ -7,7 +7,12 @@ Each test here was written RED against the bug it pins down:
   S4  concealment() ran a Python callback per pixel (generic_filter + np.std);
       the vectorised local std must be numerically equivalent, edges included.
   S4  drainage() normalised elevation over the whole raster, so a valley at
-      high absolute elevation read as non-accumulating.
+      high absolute elevation read as non-accumulating. THAT PRODUCT WAS
+      RETIRED (the owner removed drainage and fire_fuel as irrelevant to this
+      project), so its test went with it -- but the bug it pinned was about
+      LOCAL vs GLOBAL normalisation, and `built_fabric` inherited exactly that
+      shape in its smoothed density term. The replacement tests below pin the
+      same lesson on the product that now carries it.
   S5  _corridor()'s headline scalar disagreed with its own table (dropped
       pockets stayed in the scalar), and 8-connected labeling let two areas
       count as mutually reachable through a single diagonal pixel no vehicle
@@ -83,28 +88,59 @@ def test_s4_local_std_is_nonnegative_on_flat_input():
     assert np.isfinite(out).all() and (out >= 0).all()
 
 
-# --- S4: drainage lowness must be local, not AOI-global ---------------------
+# --- S4: built_fabric density must be local, not AOI-global -----------------
 
-def test_s4_drainage_sees_a_depression_at_high_elevation():
-    """A tilted-plane DEM with a depression at the HIGH end: under global
-    normalisation the depression reads as non-accumulating simply because it
-    sits at high absolute elevation, while a flat point at the low end scores
-    as a sink. Local relative elevation must invert that."""
-    h, w, gsd = 120, 160, 10.0
-    yy, xx = np.mgrid[0:h, 0:w].astype(np.float64)
-    dem = 0.05 * gsd * xx                              # ~2.9 deg tilt, rising east
-    dem -= 5.0 * np.exp(-((yy - 60) ** 2 + (xx - 120) ** 2) / (2 * 5.0 ** 2))
-    labels = np.full((h, w), cid("Batha"), dtype=np.uint8)   # not a WET_CLASS
-    r = LabelRaster(labels=labels, gsd=gsd, dem=dem.astype(np.float32))
+def test_s4_built_fabric_does_not_call_an_isolated_shed_a_city():
+    """One building in open desert must not read as dense urban fabric.
 
-    arr = s4_products.drainage(r)
-    # Both probe points share the same tilt slope (the dent's gradient vanishes
-    # at its centre) and the same non-holding class, so the comparison isolates
-    # the lowness term.
-    depression, low_plain = arr[60, 120], arr[60, 30]
-    assert depression > low_plain, (
-        f"depression at high end scored {depression:.3f}, flat low ground "
-        f"{low_plain:.3f}: lowness is still global, not local")
+    Same lesson the retired drainage test pinned: the density term has to be
+    measured in a local window. A whole-raster normalisation makes the only
+    built thing on the map its own maximum, and the score saturates on a shed.
+    """
+    h = w = 200
+    labels = np.full((h, w), cid("DryGrassland"), dtype=np.uint8)
+    labels[100:106, 100:106] = cid("House")            # ~6x6 px, one structure
+    lone = s4_products.built_fabric(LabelRaster(labels=labels, gsd=1.0))
+
+    dense = np.full((h, w), cid("House"), dtype=np.uint8)
+    dense[::7, :] = cid("PavedRoad")                   # a street grid
+    block = s4_products.built_fabric(LabelRaster(labels=dense, gsd=1.0))
+
+    assert lone[103, 103] < block[103, 103], (
+        f"an isolated shed scored {lone[103, 103]:.2f} against {block[103, 103]:.2f} "
+        f"for dense urban fabric -- the density term is not local")
+    assert lone[10, 10] < 0.2, "open grassland far from the shed should be near 0"
+
+
+def test_s4_change_volatility_orders_phenology_above_masonry():
+    """The ordering the change-detection work depends on.
+
+    `change_volatility` exists so a detector can subtract what was always going
+    to differ. If seasonal vegetation did not outrank masonry here, the whole
+    subtraction would push in the wrong direction and a destroyed building would
+    be forgiven while a field turning green got flagged.
+    """
+    def vol(name):
+        labels = np.full((32, 32), cid(name), dtype=np.uint8)
+        return float(s4_products.change_volatility(
+            LabelRaster(labels=labels, gsd=1.0)).mean())
+
+    assert vol("DryGrassland") > vol("Maquis") > vol("House")
+    assert vol("Shadow") > vol("PavedRoad"), (
+        "Shadow is an illumination artifact and moves with sun angle between "
+        "two dates for reasons that are not change at all")
+    assert vol("House") < 0.15, "masonry changing means something happened"
+
+
+def test_s4_concealment_refuses_an_unknown_target():
+    """The target is the question the old constant silently answered."""
+    labels = np.full((32, 32), cid("Maquis"), dtype=np.uint8)
+    r = LabelRaster(labels=labels, gsd=1.0)
+    person = float(s4_products.concealment(r, target="person").mean())
+    structure = float(s4_products.concealment(r, target="structure").mean())
+    assert person > structure, "the same canopy hides a person, not a building"
+    with pytest.raises(ValueError, match="person|target"):
+        s4_products.concealment(r, target="banana")
 
 
 # --- S5: corridor scalar must agree with its own table ----------------------

@@ -56,7 +56,8 @@ SOLUTIONS = [
               "for. Authored with a model, evaluated deterministically: no LLM in "
               "the runtime path.",
      "controls": [{"name": "product", "label": "product", "type": "select",
-                   "options": ["trafficability", "concealment", "drainage", "fire_fuel"]},
+                   "options": ["trafficability", "concealment", "built_fabric",
+                               "change_volatility"]},
                   {"name": "vehicle", "label": "vehicle", "type": "select",
                    "options": ["wheeled", "tracked", "foot"]},
                   {"name": "wet", "label": "wet season", "type": "checkbox"}]},

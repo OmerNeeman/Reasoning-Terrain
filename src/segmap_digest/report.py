@@ -177,8 +177,12 @@ def build(
     # ever reduced to a PNG and a mean. Retain the one the summary table needs.
     product_means = {}
     trafficability = None
-    for name in ("trafficability", "concealment", "drainage", "fire_fuel"):
-        arr = s4_products.compute(raster, name)
+    # `concealment` takes a target size and there is no right default to hide
+    # behind -- a person is the smallest of the three and the one the constants
+    # were quoted for, so it is the one this report names out loud.
+    for name, kw in (("trafficability", {}), ("concealment", {"target": "person"}),
+                     ("built_fabric", {}), ("change_volatility", {})):
+        arr = s4_products.compute(raster, name, **kw)
         s4_products.to_png(arr[::step, ::step], str(out / "img" / f"{name}.png"))
         # over classified pixels, matching the summary table below -- averaging
         # in the zeroed nodata would report a different number for the same thing
@@ -301,10 +305,21 @@ def build(
     caps = {
         "trafficability": "wheeled vehicle, dry. surface × slope, zeroed below the "
                           "vehicle's minimum surface",
-        "concealment": "how well a ground object is hidden from above: canopy, "
-                       "shadow, adjacency to built, terrain roughness",
-        "drainage": "where water pools: flatness + low ground + water-holding class",
-        "fire_fuel": "fuel load: canopy plus a dryness bonus",
+        "concealment": "person-sized target: how well something that size is "
+                       "hidden from above by canopy, shadow, adjacency to built "
+                       "and terrain roughness. A truck scores differently",
+        "built_fabric": "what kind of ground this is, bare-natural to dense-urban "
+                        "— the honest per-tile answer to “how populated”, "
+                        "read off the raster at the segmenter’s own GSD rather "
+                        "than off a 100 m population grid coarser than a city "
+                        "block. The 50 m smoothing window is the constant the "
+                        "whole product rests on",
+        "change_volatility": "how much this ground was always going to look "
+                             "different between two dates from season, phenology "
+                             "and illumination alone — the baseline a change "
+                             "detector has to beat before a difference is an "
+                             "event. UNVALIDATED: read off the class definitions, "
+                             "never measured against a pair of dates",
     }
     for name in product_means:
         S.append(f'<figure><img src="img/{name}.png" alt="{name}">'

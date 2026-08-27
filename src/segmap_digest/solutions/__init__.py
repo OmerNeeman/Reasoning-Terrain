@@ -7,7 +7,7 @@ see the shape of the answer before arguing with the heuristics.
     S1  audit        consistency / QA of the segmentation itself
     S2  adjudicate   pick among a short candidate list for a suspect region
     S3  triage       choose which chips get sent to an expensive detector
-    S4  products     trafficability, concealment, drainage, fire fuel
+    S4  products     trafficability, concealment, built fabric, change volatility
     S5  query        answer questions over the index; hand the rest to an LLM
     S6  change       semantic diff between two dates
 
@@ -22,7 +22,8 @@ SOLUTIONS = {
     "s1": ("audit", "consistency / QA of the segmentation", s1_audit),
     "s2": ("adjudicate", "candidate shortlist for a suspect region", s2_adjudicate),
     "s3": ("triage", "which chips to send to an expensive detector", s3_triage),
-    "s4": ("products", "trafficability / concealment / drainage / fire", s4_products),
+    "s4": ("products", "trafficability / concealment / built fabric / "
+           "change volatility", s4_products),
     "s5": ("query", "structured queries over the index", s5_query),
     "s6": ("change", "semantic diff between two dates", s6_change),
 }
