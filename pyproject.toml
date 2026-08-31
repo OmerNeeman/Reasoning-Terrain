@@ -25,3 +25,6 @@ segmap = "segmap_digest.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"segmap_digest.data" = ["*.json", "*.md"]

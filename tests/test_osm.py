@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from segmap_digest import class_notes, synth
-from segmap_digest.index import build_regions
+from segmap_digest.index import Region, build_regions
 from segmap_digest.osm import tags as T
 from segmap_digest.osm import trust
 from segmap_digest.osm.burn import burn
@@ -237,6 +237,83 @@ def test_reference_term_needs_the_raster_it_was_burned_onto(tile, layer):
         s2_adjudicate.adjudicate(ridx, ridx.regions[0].id, osm=layer)
 
 
+# --- S2 renormalises when OSM covers only SOME of a ranking's candidates ---
+
+def test_s2_renormalizes_the_whole_ranking_when_only_some_candidates_have_a_reference(
+        tile, layer):
+    """The bug: `reference_score` returns None per candidate, so a ranking
+    where OSM has an opinion about SOME candidates and not others used to mix
+    two scales -- a blended 0.7*own+0.3*ref for the OSM-covered candidates
+    against a raw `own` for the ones OSM said nothing about. Region 99 on this
+    fixture is exactly that case: a `TerraRosa` soil region 33% inside the
+    mapped road corridor -- below STRONG_OVERLAP, so OSM stays silent about
+    the soil candidates -- with `PavedRoad` on the shortlist (and WITH a real
+    reference score) because of that same overlap."""
+    ridx = build_regions(tile)
+    adj = s2_adjudicate.adjudicate(ridx, 99, osm=layer, raster=tile)
+    by_name = dict(adj.ranked)
+
+    assert by_name["PavedRoad"].reference is not None, \
+        "fixture drifted: PavedRoad was expected to get a real OSM reference"
+    silent = {n: ev for n, ev in adj.ranked if ev.reference is None}
+    assert silent, "fixture drifted: expected some candidates OSM said nothing about"
+
+    # (a) every candidate in the ranking went through the SAME formula: a
+    # silent candidate's total is the blend against the neutral stand-in, not
+    # a fall-through to raw `own` the way it would have been pre-fix.
+    for name, ev in adj.ranked:
+        assert ev.ranking_has_reference
+        expected = ((1 - s2_adjudicate.W_REFERENCE) * ev.own
+                    + s2_adjudicate.W_REFERENCE
+                    * (ev.reference if ev.reference is not None
+                       else s2_adjudicate.NEUTRAL_REFERENCE))
+        assert ev.total == pytest.approx(expected)
+
+    # A concrete instance of (a): LimestoneStoneyTerrain's own score is not
+    # 0.5, so if it had fallen through to raw `own` (the pre-fix behaviour for
+    # a None reference) its total would equal its own -- it must not.
+    lime = by_name["LimestoneStoneyTerrain"]
+    assert lime.reference is None
+    assert lime.own != 0.5
+    assert lime.total != lime.own
+    assert lime.total == pytest.approx(0.7 * lime.own + 0.3 * 0.5)
+
+
+def test_s2_reference_penalty_no_longer_flips_a_stronger_candidate():
+    """Direct construction of the case the owner's bug report describes: `A`
+    has both a higher `own` AND real (if lukewarm) OSM support; sibling `B` in
+    the same ranking is untouched by OSM. Pre-fix, `total` fell back to raw
+    `own` for B while diluting A towards A's weak reference score -- so B's
+    raw 0.60 beat A's blended 0.58 even though A was the better-supported
+    candidate on every axis that had an opinion. Post-fix, B is diluted by the
+    same formula (with a neutral stand-in for its missing reference) and A
+    wins, as it should."""
+    # context == morphology == geometry makes `own` equal that value exactly,
+    # regardless of the term weights (they sum to 1.0) -- the cleanest way to
+    # pin `own` for a test that is about the TOTAL formula, not the terms.
+    a = s2_adjudicate.Evidence(context=0.70, morphology=0.70, geometry=0.70,
+                               notes=[], reference=0.30,
+                               ranking_has_reference=True)
+    b = s2_adjudicate.Evidence(context=0.60, morphology=0.60, geometry=0.60,
+                               notes=[], reference=None,
+                               ranking_has_reference=True)
+    assert a.own == pytest.approx(0.70) and b.own == pytest.approx(0.60)
+
+    # What the OLD code did: A blended down to 0.58; B, with no reference,
+    # fell straight through to its raw own of 0.60 -- B wins despite A being
+    # better-supported everywhere OSM had an opinion.
+    old_a_total = 0.7 * a.own + 0.3 * a.reference
+    assert old_a_total == pytest.approx(0.58)
+    assert b.own > old_a_total, "fixture no longer demonstrates the old penalty"
+
+    # What the NEW code does: B is diluted by the same formula B's sibling A
+    # was, using the neutral stand-in for its missing reference -- and A wins.
+    assert b.total != b.own
+    assert b.total == pytest.approx(0.7 * 0.60 + 0.3 * s2_adjudicate.NEUTRAL_REFERENCE)
+    assert a.total == pytest.approx(old_a_total)     # unaffected: A had a real reference
+    assert a.total > b.total, "A is still penalised for its weak OSM support"
+
+
 # --- S3 --------------------------------------------------------------------
 
 def test_a_policy_rule_the_unit_cannot_measure_is_reported(tile, layer):
@@ -312,6 +389,45 @@ def test_confused_with_reaches_the_s2_shortlist(tile):
     with_notes = s2_adjudicate.candidates(ridx, r, notes=ns)
     assert cid("Water") not in plain
     assert cid("Water") in with_notes
+
+
+def test_scale_note_overrides_the_guessed_area_band():
+    """`scale` is documented as replacing S2's guessed area bands once wired
+    -- this is that wiring. An analyst's parsed range beats the hardcoded
+    `AREA_BAND` guess when it is present, and a class with no guess there at
+    all still gets a real geometry constraint once an analyst writes one
+    down."""
+    def region(area_m2, class_name):
+        return Region(id=1, class_id=cid(class_name), area_px=1,
+                      area_m2=area_m2, perimeter_m=1.0, compactness=1.0,
+                      elongation=1.0, bbox=(0, 0, 1, 1), centroid=(0.0, 0.0))
+
+    car_id = cid("Car")
+    # Car's hardcoded AREA_BAND is (4, 30) m2; 150 m2 is well outside it.
+    r = region(150.0, "Car")
+    plain_score, plain_notes = s2_adjudicate._geometry_score(r, car_id)
+    assert plain_score == 0.05
+    assert plain_notes  # the hardcoded guess flagged the miss
+
+    ns = class_notes.parse("## Car\nscale: 100-200 m2\n")
+    overridden_score, overridden_notes = s2_adjudicate._geometry_score(
+        r, car_id, notes=ns)
+    assert overridden_score == 1.0     # 150 m2 is inside the analyst's range
+    assert not overridden_notes        # inside the band -- nothing to flag
+
+    # A class with no AREA_BAND guess at all is unconstrained today...
+    grass_id = cid("GreenGrassland")
+    r2 = region(60.0, "GreenGrassland")
+    unconstrained_score, _ = s2_adjudicate._geometry_score(r2, grass_id)
+    assert unconstrained_score == 0.5
+
+    # ...but a scale note alone can now constrain it, with no AREA_BAND entry
+    # to fall back on.
+    ns2 = class_notes.parse("## GreenGrassland\nscale: 5-20 m2\n")
+    constrained_score, constrained_notes = s2_adjudicate._geometry_score(
+        r2, grass_id, notes=ns2)
+    assert constrained_score == 0.05   # 60 m2 is outside the analyst's 5-20 band
+    assert any("analyst scale note" in n for n in constrained_notes)
 
 
 def test_notes_render_says_which_classes_it_has_nothing_for():

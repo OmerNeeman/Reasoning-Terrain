@@ -13,11 +13,14 @@ out/
 .env.rt
 pilot-logs/
 
-# Agent/tooling state and scratch, not project files
-.claude/
+# Agent/tooling state and scratch, not project files -- except shared
+# project skills, which are checked in so every checkout gets them.
+.claude/*
+!.claude/skills/
 .claudine/
 pilot-instrumentation/
 CLAUDE.md
 
 # Large drops that must never enter git history
 *.zip
+models/

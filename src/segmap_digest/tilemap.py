@@ -185,6 +185,14 @@ def build_tile_index(raster, ridx, cidx, osm, report, adjudications, products,
 
         classes: list[list] = []
         s4 = {k: 0.0 for k in PRODUCT_KEYS}
+        # A provider (traversability today, potentially others later) may mark
+        # a pixel NaN rather than 0.0 for ground it never measured -- see
+        # traversability.TraversabilityResult.unmeasured_fraction. `np.nanmean`
+        # below already keeps a partly-NaN tile from reporting a NaN mean, but
+        # a *wholly* NaN tile would otherwise silently round-trip through `_f`
+        # to 0.0, i.e. "impassable" -- the exact bug this is fixing, one layer
+        # up. This dict is how a reader tells "0.0" from "unmeasured" apart.
+        s4_unmeasured = {k: 0.0 for k in PRODUCT_KEYS}
         block_id, block_label, road_frac, bldg_frac = 0, "", 0.0, 0.0
         other, n_cls = 0.0, 0
 
@@ -206,7 +214,14 @@ def build_tile_index(raster, ridx, cidx, osm, report, adjudications, products,
 
             for k, arr in prods.items():
                 sub = arr[r0:r1, c0:c1]
-                s4[k] = _f(np.nanmean(sub if sub_valid is None else sub[sub_valid]))
+                vals = sub if sub_valid is None else sub[sub_valid]
+                nan = np.isnan(vals)
+                if nan.all():
+                    s4_unmeasured[k] = 1.0
+                else:
+                    s4[k] = _f(np.nanmean(vals))
+                    if nan.any():
+                        s4_unmeasured[k] = _f(float(nan.mean()))
 
             if road is not None:
                 m = road[r0:r1, c0:c1]
@@ -274,6 +289,11 @@ def build_tile_index(raster, ridx, cidx, osm, report, adjudications, products,
             # No Selection object is passed in, so a tile is never marked
             "s3": {"score": _f(score[i]), "selected": bool(chosen[i] > 0.5)},
             "s4": {k: s4[k] for k in PRODUCT_KEYS},
+            # Fraction of each product that was NaN (unmeasured) in this tile,
+            # not folded into "s4" itself so an old reader that only knows
+            # `s4[k]` keeps working -- it just cannot yet tell 0.0 apart from
+            # "we never measured this tile".
+            "s4_unmeasured": {k: s4_unmeasured[k] for k in PRODUCT_KEYS},
             "osm": dict(EMPTY_OSM) if osm is None else {
                 "block": int(block_id), "block_label": block_label,
                 "road_frac": road_frac, "building_frac": bldg_frac,

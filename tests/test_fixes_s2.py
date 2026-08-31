@@ -147,7 +147,7 @@ def _fixed_score_index(monkeypatch, totals: dict[str, float],
     monkeypatch.setattr(s2_adjudicate, "_morphology_score",
                         lambda r, cand, has_terrain=True: (fake(cand), []))
     monkeypatch.setattr(s2_adjudicate, "_geometry_score",
-                        lambda r, cand: (fake(cand), []))
+                        lambda r, cand, notes=None: (fake(cand), []))
     return RegionIndex(regions=[_region(incumbent)],
                        label_array=np.zeros((10, 10), dtype=np.int32),
                        has_terrain=True)

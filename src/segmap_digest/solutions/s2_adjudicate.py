@@ -12,6 +12,7 @@ UNDECIDABLE-NEEDS-<data> is a first-class output here.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from ..index import Region, RegionIndex
@@ -57,6 +58,19 @@ W_GEOMETRY = 0.20     # does size / shape fit
 # guess, and with `trust.SUPPORT`/`trust.CONTRADICT`, which is the policy.
 W_REFERENCE = 0.30
 
+# What a candidate's reference term is worth when OSM had an opinion about at
+# least one OTHER candidate in the same ranking but was silent about THIS one.
+# Without this, a ranking where OSM covers some candidates and not others
+# compares a blended score for the covered ones against a raw `own` for the
+# silent ones -- two different scales in one sort, which has measurably
+# penalised candidates for having OSM support. 0.5 is this file's own existing
+# convention for "no evidence either way" (see `_context_score`'s neutral
+# start and `_morphology_score`'s no-constraint return), so blending with it
+# changes a candidate's score by exactly zero on average and never argues for
+# or against anything by itself -- it only puts every candidate through the
+# same formula. See `Evidence.total`.
+NEUTRAL_REFERENCE = 0.5
+
 # Candidates are drawn from classes within this semantic distance of the
 # incumbent, plus the dominant neighbouring classes.
 CANDIDATE_MAX_DISTANCE = 0.5
@@ -100,17 +114,43 @@ MORPHOLOGY_SLOPE = {
 COHERENT_FACET = {"RockDipSlope", "Terrace"}
 COHERENT_FACET_MAX_CIRCVAR = 0.3
 
-# Expected area band per class, m2. Only a few classes have a real constraint;
-# the rest are unconstrained.
+# Expected area band per class, m2. A guess, used only when an analyst has not
+# written down a real one (see `_SCALE_AREA_RE` / `_parse_scale_area` below,
+# which is now consulted first): only a few classes have a real constraint
+# here; the rest are unconstrained.
 AREA_BAND = {
     "Car": (4.0, 30.0),
     "House": (25.0, 2000.0),
     "BrickWall": (2.0, 500.0),
 }
 
+# An analyst's `scale` class note ("typical size and shape as a polygon", see
+# `class_notes.py`) is prose, not a structured value -- there is no parsed
+# `scale` property on `ClassNote` to consume. This picks out the one shape of
+# prose this module knows how to act on: an explicit numeric range in square
+# metres ("10-40 m2", "25 to 2000 m2", "4-30 m²"). Anything else -- a shape
+# description with no numbers, an elongation-only note, a single figure -- is
+# left alone rather than guessed at, and `_geometry_score` falls back to
+# `AREA_BAND` (or unconstrained) exactly as if the note did not exist.
+_SCALE_AREA_RE = re.compile(
+    r"(?P<lo>\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(?P<hi>\d+(?:\.\d+)?)\s*"
+    r"(?:m2|m²|sq\s*\.?\s*m|sqm|square\s+met(?:re|er)s?)",
+    re.IGNORECASE,
+)
+
 # Classes whose shape is intrinsically linear.
 LINEAR = {"PavedRoad", "DirtRoad", "DirtRoadB", "BrickWall"}
 LINEAR_MIN_ELONGATION = 2.0
+
+
+def _parse_scale_area(text: str) -> tuple[float, float] | None:
+    """Pull a `lo-hi m2` area range out of an analyst's free-text `scale`
+    note, or None if the note does not contain one (see `_SCALE_AREA_RE`)."""
+    m = _SCALE_AREA_RE.search(text)
+    if not m:
+        return None
+    lo, hi = float(m.group("lo")), float(m.group("hi"))
+    return (lo, hi) if lo <= hi else (hi, lo)
 
 
 @dataclass
@@ -120,11 +160,20 @@ class Evidence:
     geometry: float
     notes: list[str]
     # The reference term: what an independent map (OSM) says about this
-    # candidate here. `None` -- no OSM layer, or an OSM layer with nothing to
-    # say about this candidate -- and `total` is EXACTLY the three-term score
-    # this module computed before the layer existed. That identity is a test
-    # (`test_osm.py::test_s2_unchanged_without_osm`), not a hope.
+    # candidate here. `None` means OSM had nothing to say about THIS candidate
+    # -- no OSM layer at all, or a layer that is silent about it specifically.
+    # When no candidate anywhere in the ranking got a reference score, `total`
+    # is EXACTLY the three-term score this module computed before the layer
+    # existed. That identity is a test
+    # (`test_osm.py::test_s2_is_bit_identical_without_osm`), not a hope. When a
+    # SIBLING candidate did get a reference score, see `ranking_has_reference`.
     reference: float | None = None
+    # Set by `adjudicate()`, once, after the whole ranking's candidates exist
+    # and before anything sorts or reads `.total`: True if ANY candidate in
+    # this same ranking got a real reference score. It exists so `total` can
+    # apply one formula to every candidate in a ranking rather than switching
+    # formulas per candidate -- see the comment on `total` below.
+    ranking_has_reference: bool = False
 
     @property
     def own(self) -> float:
@@ -135,9 +184,17 @@ class Evidence:
 
     @property
     def total(self) -> float:
-        if self.reference is None:
-            return self.own
-        return (1.0 - W_REFERENCE) * self.own + W_REFERENCE * self.reference
+        if self.reference is not None:
+            return (1.0 - W_REFERENCE) * self.own + W_REFERENCE * self.reference
+        if self.ranking_has_reference:
+            # OSM spoke about a sibling candidate in this ranking but not about
+            # this one. Falling back to raw `own` here (as if OSM had said
+            # nothing at all) would compare this candidate on a different
+            # scale than the one OSM DID cover -- so it gets the same blended
+            # formula, with a neutral stand-in for the missing reference,
+            # rather than a discount for OSM's silence.
+            return (1.0 - W_REFERENCE) * self.own + W_REFERENCE * NEUTRAL_REFERENCE
+        return self.own
 
 
 @dataclass
@@ -164,8 +221,8 @@ def candidates(ridx: RegionIndex, r: Region, osm_extra=(),
     # An analyst's `confused_with` beats `class_distance` every time: the
     # taxonomy metric is a guess about which classes are alike, and this is a
     # record of which ones actually get mixed up in practice. Empty until
-    # somebody fills docs/class_notes.md, at which point the shortlist changes
-    # and this is the only place it changes.
+    # somebody fills in the class notes (see `class_notes.default()`), at
+    # which point the shortlist changes and this is the only place it changes.
     if notes is not None:
         note = notes.get(r.class_name)
         if note:
@@ -264,24 +321,40 @@ def _morphology_score(r: Region, cand: int,
     return score, notes
 
 
-def _geometry_score(r: Region, cand: int) -> tuple[float, list[str]]:
+def _geometry_score(r: Region, cand: int, notes=None) -> tuple[float, list[str]]:
+    """`notes`, when given, is the class-notes `NoteSet` (see `class_notes.py`
+    and `candidates()` above, which threads it the same way). An analyst's
+    `scale` note on this candidate's class beats the hardcoded `AREA_BAND`
+    guess when it parses into a real area range; `AREA_BAND` is the fallback,
+    and no constraint at all -- the pre-existing behaviour -- is what is left
+    when neither has one."""
     name = BY_ID[cand].name
-    score, notes = 0.5, []
-    if name in AREA_BAND:
-        lo, hi = AREA_BAND[name]
+    score, msgs = 0.5, []
+    band, band_source = None, ""
+    note = notes.get(name) if notes is not None else None
+    if note is not None and note.filled("scale"):
+        band = _parse_scale_area(note.get("scale"))
+        if band is not None:
+            band_source = "analyst scale note"
+    if band is None and name in AREA_BAND:
+        band = AREA_BAND[name]
+        band_source = "AREA_BAND guess"
+    if band is not None:
+        lo, hi = band
         if lo <= r.area_m2 <= hi:
             score = 1.0
         else:
             score = 0.05
-            notes.append(f"area {r.area_m2:.0f} m2 outside {lo}-{hi} for {name}")
+            msgs.append(f"area {r.area_m2:.0f} m2 outside {lo}-{hi} for {name} "
+                        f"(per {band_source})")
     if name in LINEAR:
         if r.elongation >= LINEAR_MIN_ELONGATION:
             score = max(score, 0.9)
-            notes.append(f"elongation {r.elongation:.1f} fits a linear feature")
+            msgs.append(f"elongation {r.elongation:.1f} fits a linear feature")
         else:
             score = min(score, 0.2)
-            notes.append(f"elongation {r.elongation:.1f} too blobby for {name}")
-    return score, notes
+            msgs.append(f"elongation {r.elongation:.1f} too blobby for {name}")
+    return score, msgs
 
 
 def adjudicate(ridx: RegionIndex, region_id: int,
@@ -308,7 +381,7 @@ def adjudicate(ridx: RegionIndex, region_id: int,
     for cand in candidates(ridx, r, osm_extra=osm_extra, notes=notes):
         ctx, n1 = _context_score(ridx, r, cand)
         mor, n2 = _morphology_score(r, cand, ridx.has_terrain)
-        geo, n3 = _geometry_score(r, cand)
+        geo, n3 = _geometry_score(r, cand, notes=notes)
         ref, n4 = (None, [])
         if ref_ctx is not None:
             from ..osm import evidence as osm_evidence
@@ -322,6 +395,14 @@ def adjudicate(ridx: RegionIndex, region_id: int,
         ranked.append((BY_ID[cand].name,
                        Evidence(ctx, mor, geo, n1 + n2 + n3 + n4 + n5,
                                 reference=ref)))
+    # Every candidate in a ranking must be scored through the same formula: if
+    # ANY of them got a real reference score, everyone does (a neutral one for
+    # the rest) rather than mixing a blended scale for the OSM-covered
+    # candidates with a raw `own` scale for the ones OSM was silent about. Must
+    # run before anything reads `.total` -- nothing above this line does.
+    any_ref = any(ev.reference is not None for _n, ev in ranked)
+    for _n, ev in ranked:
+        ev.ranking_has_reference = any_ref
     ranked.sort(key=lambda kv: -kv[1].total)
 
     incumbent = r.class_name

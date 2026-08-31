@@ -86,8 +86,10 @@ handled in [`loader.py`](src/segmap_digest/loader.py):
   `ID_TO_LABEL_MAPPING` GeoTIFF tag and we read it automatically, mapping **by
   name**. A name the taxonomy does not define is an error, not something to
   fold into `Unclassified`. Tiles without the tag need `--classes` —
-  [`examples/smart_terrain_class_ids.json`](examples/smart_terrain_class_ids.json)
-  is the mapping as read off the sinai drop.
+  [`src/segmap_digest/data/smart_terrain_class_ids.json`](src/segmap_digest/data/smart_terrain_class_ids.json)
+  is the mapping as read off the sinai drop, shipped inside the package and
+  used automatically by `segmap playground` when an upload carries no mapping
+  tag.
 - **Nodata is 0, which is also `Unclassified`'s id.** The two are not
   distinguishable in the file. Every 0 is treated as no-data, every fraction is
   over classified pixels only, and the report says how much was excluded. If the
@@ -284,8 +286,11 @@ is *there*, ST is the latest word on what it *looks like now*. Details in
 
 ### Class notes
 
-[`docs/class_notes.md`](docs/class_notes.md) is where an analyst writes down what
-a class name does not say. **One field is read by code today: `confused_with`.**
+[`src/segmap_digest/data/class_notes.md`](src/segmap_digest/data/class_notes.md)
+ships as the bundled default template -- where an analyst writes down what a
+class name does not say. Point `$SEGMAP_CLASS_NOTES` at your own copy to edit
+it outside the installed package; that is the real workflow, the bundled file
+is only the starting point. **One field is read by code today: `confused_with`.**
 It feeds S2's candidate shortlist in
 [`s2_adjudicate.py`](src/segmap_digest/solutions/s2_adjudicate.py) and beats the
 taxonomy's guess at which classes are alike, and its reason text is quoted back

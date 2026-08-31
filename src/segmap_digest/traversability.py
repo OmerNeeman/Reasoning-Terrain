@@ -37,6 +37,9 @@ silent and the output still looks like a map):
                      on a real cropped export carries the integer 0, which is
                      ALSO the id of `Unclassified` (traffic 0.5). Scoring those
                      pixels makes a third of an arid AOI read as mediocre going.
+                     Score them NaN (unmeasured), not 0.0 (measured and
+                     impassable) -- see WHAT YOU MUST RETURN below; that
+                     distinction is the entire reason `valid` exists.
                      Use `request.aoi` if you want valid AND mask pre-combined.
   request.dem        (H, W) float32 metres above the datum, already on the label
                      grid, or None. It may have been nearest-neighbour resampled
@@ -61,8 +64,13 @@ silent and the output still looks like a map):
                      floor), wet_sensitivity, width_m (0.0 = no width gate).
                      THESE ARE GUESSES -- see `s4_products.VEHICLES`. If your
                      model owns better numbers, use your own and say so in a note.
-  request.mask       optional (H, W) bool area of interest. Score what you like
-                     outside it, but you must still return a full-shape raster.
+  request.mask       optional (H, W) bool area of interest. This is the CALLER
+                     restricting scope on purpose, not a data-availability
+                     claim -- unlike `valid`, ground outside `mask` was still
+                     measured, the caller just is not asking about it here.
+                     Score what you like outside it, but you must still return
+                     a full-shape raster; 0.0 is a reasonable default for
+                     "not in scope" and is what the builtin does.
   request.wet        bool season flag, `request.osm` the burned OSM overlay when
                      one was joined (see `osm.burned`), `request.options` a
                      free-form dict this repo never inspects.
@@ -72,10 +80,17 @@ into them.
 
 WHAT YOU MUST RETURN -- `TraversabilityResult`:
 
-  score        (H, W) float32, exactly `request.labels.shape`, every value in
-               [0, 1] and finite. 1.0 = freely traversable by that vehicle,
-               0.0 = impassable. `_validate` rejects anything else at the seam
-               rather than letting a NaN propagate into a corridor search.
+  score        (H, W) float32, exactly `request.labels.shape`. Every value is
+               either in [0, 1] or NaN. 1.0 = freely traversable by that
+               vehicle, 0.0 = impassable -- MEASURED and impassable, a
+               confident answer. NaN = you never measured this pixel at all;
+               it is unmeasured ground, not a confident zero, and is the
+               correct thing to return for nodata rather than guessing 0.0.
+               `_validate` rejects +/-inf and anything outside [0, 1] at the
+               seam rather than letting a bad value propagate into a corridor
+               search; NaN is the one non-finite value it lets through, on
+               purpose. See `TraversabilityResult.unmeasured_fraction` for how
+               a reader finds out how much of your raster this was.
   provider     your name, printed in reports so a reader knows which model
                produced the number.
   has_terrain  True only if elevation actually informed the score.
@@ -244,7 +259,7 @@ class TraversabilityRequest:
 class TraversabilityResult:
     """A going raster plus the provenance a reader needs to trust it."""
 
-    score: np.ndarray                  # (H, W) float32 in [0, 1]
+    score: np.ndarray                  # (H, W) float32, [0, 1] or NaN (unmeasured)
     provider: str                      # who produced it
     has_terrain: bool                  # did elevation actually inform it
     notes: list[str] = field(default_factory=list)
@@ -252,6 +267,22 @@ class TraversabilityResult:
     @property
     def shape(self) -> tuple[int, int]:
         return self.score.shape
+
+    @property
+    def unmeasured_fraction(self) -> float:
+        """Fraction of `score` that is NaN -- genuinely unmeasured, not scored
+        impassable. 0.0 for an empty raster or one with no NaN at all.
+
+        A downstream reader (tilemap rendering, report text) needs this
+        constantly and should never have to reach into `np.isnan(result.score)`
+        itself -- that is exactly the kind of thing that gets forgotten once,
+        quietly turning "we never measured this" back into "this is 0.0",
+        which is the bug this property exists to make impossible to miss.
+        """
+        score = self.score
+        if score.size == 0:
+            return 0.0
+        return float(np.isnan(score).mean())
 
     def caveat_block(self) -> str:
         """Report-ready header. Every note, verbatim, plus the terrain verdict.
@@ -264,6 +295,10 @@ class TraversabilityResult:
         if not self.has_terrain:
             lines.append("#   elevation did not inform this raster -- treat it as "
                          "a surface-class map, not a going estimate")
+        frac = self.unmeasured_fraction
+        if frac > 0:
+            lines.append(f"#   {frac:.1%} of this raster is unmeasured (NaN) -- "
+                         f"treat that ground as unknown, not impassable")
         lines += [f"#   {n}" for n in self.notes]
         return "\n".join(lines)
 
@@ -397,15 +432,34 @@ class BuiltinProvider:
             notes.append(request.raster.subset_note)
 
         # Nodata carries class id 0 (Unclassified, traffic 0.5) -- the same
-        # reasoning as s4_products.compute: left alone, a sparse export reads as
-        # moderately driveable open ground and a corridor search drives across it.
+        # reasoning as s4_products.compute: left alone, a sparse export reads
+        # as moderately driveable open ground and a corridor search drives
+        # across it. The fix is NOT to score it 0.0 either -- that is
+        # identical to a genuine obstacle (cliff, water) and a reader of the
+        # raster cannot tell "no data here" from "impassable here" apart.
+        # NaN is the distinct signal: `valid` means the sensor never covered
+        # this pixel at all, which is a data-availability fact, not a going
+        # estimate, so it becomes NaN (see `unmeasured_fraction`).
+        #
+        # `mask`, by contrast, is the caller narrowing scope on purpose --
+        # ground that WAS measured (it is still inside `valid`) but that they
+        # are not asking about right now. That is a real "not in scope"
+        # answer rather than an "unknown" one, so it keeps the old
+        # all-zero convention below; only `valid` graduates to NaN.
         if request.mask is not None:
             notes.append(f"SCOPE -- scored inside the supplied mask only "
                          f"({float(request.mask.mean()):.1%} of the extent); "
                          f"everything outside it is 0.")
-        aoi = request.aoi
-        if aoi is not None:
-            score = np.where(aoi, score, 0.0)
+        valid = request.valid
+        if valid is not None:
+            score = np.where(valid, score, np.nan)
+        if request.mask is not None:
+            outside_mask = ~request.mask
+            if valid is not None:
+                # Nodata already went to NaN above; do not stomp that back to
+                # 0.0 just because it also happens to sit outside the mask.
+                outside_mask = outside_mask & valid
+            score = np.where(outside_mask, 0.0, score)
 
         return TraversabilityResult(
             score=np.clip(score, 0.0, 1.0).astype(np.float32),
@@ -440,11 +494,14 @@ def _validate(result: TraversabilityResult,
               request: TraversabilityRequest) -> TraversabilityResult:
     """Enforce the output half of the contract, at the seam.
 
-    A third-party estimator that returns a 0..255 raster, a NaN over nodata, or
-    a transposed array is a bug that would otherwise surface a thousand lines
-    later as a corridor through a cliff. Cheap to catch here, and the error names
-    the contract it broke. float64 is accepted and cast -- that one is a
-    formality, not a mistake.
+    A third-party estimator that returns a 0..255 raster, +/-inf, or a
+    transposed array is a bug that would otherwise surface a thousand lines
+    later as a corridor through a cliff. NaN is let through on purpose: it is
+    the contract's way of saying "genuinely unmeasured", not a bug -- see the
+    module docstring's WHAT YOU MUST RETURN section and
+    `TraversabilityResult.unmeasured_fraction`. Cheap to catch the rest here,
+    and the error names the contract it broke. float64 is accepted and cast --
+    that one is a formality, not a mistake.
     """
     if not isinstance(result, TraversabilityResult):
         raise TypeError(f"provider returned {type(result).__name__}, expected a "
@@ -454,14 +511,18 @@ def _validate(result: TraversabilityResult,
         raise ValueError(f"provider {result.provider!r} returned shape {score.shape}, "
                          f"expected {request.shape} (the full label grid, even when "
                          f"a mask was supplied)")
-    if not np.isfinite(score).all():
-        raise ValueError(f"provider {result.provider!r} returned non-finite values; "
-                         f"the contract is finite float32 in [0, 1]")
-    lo, hi = float(score.min()), float(score.max())
-    if lo < -SCORE_EPS or hi > 1.0 + SCORE_EPS:
-        raise ValueError(f"provider {result.provider!r} returned values in "
-                         f"[{lo:.4g}, {hi:.4g}]; the contract is [0, 1] where 1 is "
-                         f"freely traversable and 0 impassable")
+    if np.isinf(score).any():
+        raise ValueError(f"provider {result.provider!r} returned +/-inf; the "
+                         f"contract is [0, 1], or NaN for a pixel that was never "
+                         f"measured -- inf is neither")
+    finite = ~np.isnan(score)
+    if finite.any():
+        lo, hi = float(score[finite].min()), float(score[finite].max())
+        if lo < -SCORE_EPS or hi > 1.0 + SCORE_EPS:
+            raise ValueError(f"provider {result.provider!r} returned values in "
+                             f"[{lo:.4g}, {hi:.4g}]; the contract is [0, 1] where 1 is "
+                             f"freely traversable and 0 impassable (NaN is allowed, "
+                             f"and exempt from this range check)")
     if score.dtype == np.float32:
         return result
     return replace(result, score=score.astype(np.float32))

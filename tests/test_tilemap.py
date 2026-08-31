@@ -118,12 +118,16 @@ def test_the_builtin_abstains_when_there_is_no_terrain():
 
 @pytest.mark.parametrize("bad,why", [
     (lambda shape: np.full(shape, 2.0, "float32"), "out of [0,1]"),
-    (lambda shape: np.full(shape, np.nan, "float32"), "non-finite"),
+    (lambda shape: np.full(shape, np.inf, "float32"), "+inf"),
+    (lambda shape: np.full(shape, -np.inf, "float32"), "-inf"),
     (lambda shape: np.zeros((3, 3), "float32"), "wrong shape"),
 ])
 def test_a_bad_provider_is_refused_at_the_seam(bad, why):
     """The whole reason the seam validates: an external model returning 0-255,
-    or NaN for 'unmeasured', must not reach a product as if it were a score."""
+    +/-inf, or a mis-shaped raster must not reach a product as if it were a
+    score. NaN is deliberately absent from this list -- it is now the
+    contract's spelling of 'genuinely unmeasured', not a bug; see the NaN
+    tests below."""
     r = synth.generate(size=64, seed=1)
 
     class Bad(traversability.TraversabilityProvider):
@@ -142,3 +146,131 @@ def test_an_unknown_provider_raises_rather_than_falling_back():
     r = synth.generate(size=64, seed=1)
     with pytest.raises((KeyError, ValueError)):
         traversability.estimate(r, provider="nope-not-registered")
+
+
+# --- NaN: the unmeasured signal, not 0.0 ------------------------------------
+#
+# Review #4 in docs/handover.html: nodata scored 0.0 is indistinguishable from
+# a genuine obstacle. The fix adds NaN to the contract as "genuinely
+# unmeasured", distinct from 0.0's "measured and impassable".
+
+def test_validate_accepts_partial_nan():
+    """A provider marking some pixels unmeasured is not a bug at the seam."""
+    r = synth.generate(size=64, seed=1)
+    shape = r.labels.shape
+
+    class PartiallyUnmeasured(traversability.TraversabilityProvider):
+        def estimate(self, request):
+            score = np.full(shape, 0.5, dtype=np.float32)
+            score[0, 0] = np.nan
+            return traversability.TraversabilityResult(score, "partial-nan", True, [])
+
+    traversability.register_provider("partial-nan", PartiallyUnmeasured())
+    res = traversability.estimate(r, provider="partial-nan")
+    assert np.isnan(res.score[0, 0])
+    assert res.score.dtype == np.float32
+    assert float(res.score[0, 1]) == pytest.approx(0.5)
+
+
+def test_range_check_still_fires_alongside_unrelated_nan():
+    """NaN elsewhere in the raster must not blind `_validate` to a genuine
+    out-of-range value -- the two checks are independent."""
+    r = synth.generate(size=64, seed=1)
+    shape = r.labels.shape
+
+    class MixedBad(traversability.TraversabilityProvider):
+        def estimate(self, request):
+            score = np.full(shape, np.nan, dtype=np.float32)
+            score[0, 0] = 1.7                  # the one non-NaN pixel is bad
+            return traversability.TraversabilityResult(score, "mixed-bad", True, [])
+
+    traversability.register_provider("mixed-bad", MixedBad())
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        traversability.estimate(r, provider="mixed-bad")
+
+
+def test_all_nan_provider_is_accepted():
+    """A provider that could measure nothing at all is a legitimate answer,
+    same spirit as `has_terrain=False`."""
+    r = synth.generate(size=64, seed=1)
+    shape = r.labels.shape
+
+    class NothingMeasured(traversability.TraversabilityProvider):
+        def estimate(self, request):
+            return traversability.TraversabilityResult(
+                np.full(shape, np.nan, dtype=np.float32), "blind", False, [])
+
+    traversability.register_provider("blind", NothingMeasured())
+    res = traversability.estimate(r, provider="blind")
+    assert np.isnan(res.score).all()
+    assert res.unmeasured_fraction == pytest.approx(1.0)
+
+
+def test_unmeasured_fraction_reports_correctly():
+    score = np.zeros((4, 4), dtype=np.float32)
+    score[:2, :] = np.nan                      # exactly half the raster
+    res = traversability.TraversabilityResult(score, "x", True, [])
+    assert res.unmeasured_fraction == pytest.approx(0.5)
+
+    block = res.caveat_block()
+    assert "50.0%" in block and "unmeasured" in block
+
+    fully_measured = traversability.TraversabilityResult(
+        np.zeros((3, 3), "float32"), "x", True, [])
+    assert fully_measured.unmeasured_fraction == 0.0
+    assert "unmeasured" not in fully_measured.caveat_block()
+
+
+def test_builtin_scores_nodata_as_nan_not_zero():
+    """The bug itself: a sparse export's nodata must not read as impassable
+    ground. `valid=False` -> NaN, not 0.0, from the builtin provider."""
+    r = synth.generate(size=64, seed=3)
+    valid = np.ones(r.shape, dtype=bool)
+    valid[:16, :16] = False                    # a nodata corner, 1/16 of the tile
+    r.valid = valid
+
+    res = traversability.estimate(r, vehicle="wheeled")
+    assert np.isnan(res.score[:16, :16]).all()
+    assert np.isfinite(res.score[valid]).all()
+    assert res.unmeasured_fraction == pytest.approx(valid[~valid].size / valid.size)
+
+
+def test_builtin_mask_exclusion_stays_zero_not_nan():
+    """`mask` is the caller narrowing scope on purpose, over ground that WAS
+    measured -- that is a different claim from `valid`'s "no data here", so it
+    keeps the old 0.0 convention rather than becoming NaN too."""
+    r = synth.generate(size=64, seed=3)
+    mask = np.ones(r.shape, dtype=bool)
+    mask[:16, :16] = False
+
+    res = traversability.estimate(r, vehicle="wheeled", mask=mask)
+    assert (res.score[:16, :16] == 0.0).all()
+    assert res.unmeasured_fraction == 0.0
+
+
+def test_tile_aggregation_survives_partial_nan_traversability():
+    """The consumer half of the fix: `build_tile_index` must not let a fully
+    unmeasured tile's traversability round-trip through `_f` back into a
+    misleading 0.0 with no signal attached (`s4_unmeasured` is that signal),
+    and a partly unmeasured tile must still report the mean of what WAS
+    measured, not NaN."""
+    r = synth.generate(size=128, seed=2)
+    ridx = build_regions(r)
+    cidx = build_chips(r, size=128)
+    rep = s1_audit.run(ridx)
+
+    trav_score = np.full(r.shape, 0.6, dtype=np.float32)
+    trav_score[:64, :64] = np.nan              # exactly the (0, 0) tile
+    ti = tilemap.build_tile_index(r, ridx, cidx, None, rep, [],
+                                  {"traversability": trav_score}, tile_px=64)
+    by_rc = {(t["r"], t["c"]): t for t in ti["tiles"]}
+
+    fully_unmeasured = by_rc[(0, 0)]
+    assert fully_unmeasured["s4_unmeasured"]["traversability"] == 1.0
+    assert fully_unmeasured["s4"]["traversability"] == 0.0
+
+    fully_measured = by_rc[(1, 1)]
+    assert fully_measured["s4"]["traversability"] == pytest.approx(0.6)
+    assert fully_measured["s4_unmeasured"]["traversability"] == 0.0
+
+    json.dumps(ti)                             # no raw NaN leaked into the payload

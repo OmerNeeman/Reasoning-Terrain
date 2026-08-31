@@ -680,7 +680,8 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("legend", help="print the class legend")
     p.add_argument("--full", action="store_true", help="include definitions")
     p.add_argument("--notes", action="store_true",
-                   help="fold in the analyst notes from docs/class_notes.md")
+                   help="fold in the analyst notes (bundled default; "
+                        "$SEGMAP_CLASS_NOTES)")
     p.set_defaults(func=cmd_legend)
 
     p = sub.add_parser("digest", help="emit one representation level")
@@ -721,8 +722,8 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("notes", help="the analyst's class notes: coverage, "
                                      "one class, validation, or a fresh template")
     _add_input_args(p)
-    p.add_argument("--notes", help="notes file (default docs/class_notes.md; "
-                                   "$SEGMAP_CLASS_NOTES)")
+    p.add_argument("--notes", help="notes file (default: the bundled "
+                                   "class_notes.md; $SEGMAP_CLASS_NOTES)")
     p.add_argument("--class", dest="klass", help="print one class's note")
     p.add_argument("--check", action="store_true",
                    help="validate and exit non-zero if anything is wrong")

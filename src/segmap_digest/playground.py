@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import base64
 import html
+import importlib.resources
 import io
 import json
 import re
@@ -66,10 +67,42 @@ from . import loader
 # worth engineering for. A second job waits here and its page says so.
 _LOCK = threading.Lock()
 
+# Ceiling on one run, and on how long a queued job waits for `_LOCK` before it
+# gives up. The STEPS comment below measures region-index 16s + burn 7s +
+# blocks 10s + the four S4 products ~20s + Overpass 3-40s on a 4 Mpx crop --
+# call it under 100s worst case. DEFAULT_MAX_MPX is 12 Mpx, three times that
+# crop; even tripling every measured step for headroom (~280s) plus whatever
+# reading/positioning/indexing/S1-S3/rendering cost on top stays comfortably
+# under ten minutes. 600s also isn't so tight that a legitimate large upload
+# gets killed while it is simply working -- the failure this guards against is
+# a blocking call that never returns at all (see `_run_job`), not a slow one.
+#
+# A Python thread cannot be forced to stop from outside once it is inside a
+# blocking call like `rasterio.open()` on a hung FIFO -- there is no safe way
+# to reclaim it. So this is two separate, honest half-measures rather than one
+# complete fix: `_run_job` runs a watchdog timer that marks a job "failed" if
+# it is still "running" past this deadline (the PAGE recovers), and a queued
+# job calls `_LOCK.acquire(timeout=JOB_TIMEOUT_S)` instead of blocking forever
+# (the QUEUE recovers). Neither one gets `_LOCK` released if the thread holding
+# it is truly stuck inside a syscall that never returns -- that thread, and
+# whatever OS resource it is blocked on, leaks for the life of the process.
+# What this buys back is visibility and a bounded wait, not a guarantee that a
+# wedged job stops occupying `_LOCK`.
+JOB_TIMEOUT_S = 600
+
 # Jobs live for the life of the process; the rendered page also lives on disk, so
 # losing this dict costs you the progress history and nothing else.
 _JOBS: dict[str, "Job"] = {}
 _JOBS_LOCK = threading.Lock()
+
+# Past this many jobs, the oldest DONE/FAILED ones have `Job.body` (the full
+# rendered HTML report, ~3.2 MB measured) dropped from memory -- `_persist()`
+# already wrote the same bytes to `out_dir/index.html`, and `_report_bytes()`
+# reads them back from there. The `Job` record itself (id, status, timings,
+# `out_dir`) is kept indefinitely: it is a few hundred bytes, `/jobs` wants it
+# for history, and `/result/<id>` needs `out_dir` to find the file on disk. A
+# job that is still "waiting" or "running" is never touched by eviction.
+MAX_JOBS_RETAINED = 50
 
 # Where finished runs are written. One directory per run, so an upload is never
 # lost to a closed tab.
@@ -153,31 +186,19 @@ PREVIEW_SIDE = 1100
 
 ACCEPT = ".tif,.tiff,.npy,.png"
 
-# The class mapping that ships with the repo, read off the sinai drop. A real
+# The class mapping that ships with the package, read off the sinai drop. A real
 # Smart Terrain export writes SPARSE wire ids (0..241) and is supposed to carry
 # the translation as an `ID_TO_LABEL_MAPPING` GeoTIFF tag -- but several real
 # drops do not, and then `loader.load` refuses rather than guessing. Asking every
 # user to hunt down a JSON before they can see anything is the wrong default when
 # a standard mapping exists, so the playground tries the file's own tag first and
 # falls back to this, saying which it used.
-def _bundled(*relative: str) -> Path:
-    """Repo-shipped file, located without assuming an editable install.
-
-    See the same helper in `class_notes`: `parents[2]` is only right inside the
-    checkout, and under `pip install .` this default silently disappears --
-    which turns a tag-less GeoTIFF from "loads with the standard mapping" into
-    "refuses". Checked in order: repo layout, cwd, package `data/`.
-    """
-    here = Path(__file__).resolve()
-    for c in (here.parents[2].joinpath(*relative),
-              Path.cwd().joinpath(*relative),
-              here.parent.joinpath("data", relative[-1])):
-        if c.is_file():
-            return c
-    return here.parents[2].joinpath(*relative)
-
-
-DEFAULT_CLASSES = _bundled("examples", "smart_terrain_class_ids.json")
+#
+# Located via `importlib.resources` rather than a repo-relative path, so this
+# resolves under an editable install, a wheel install, or a zipped one alike --
+# a plain `pip install .` no longer makes this default silently disappear.
+DEFAULT_CLASSES: Path = importlib.resources.files("segmap_digest.data").joinpath(
+    "smart_terrain_class_ids.json")
 
 
 # --- multipart -------------------------------------------------------------
@@ -295,12 +316,20 @@ def _label_preview(raster) -> str:
 
 
 def _product_preview(arr: np.ndarray) -> str:
-    x = np.clip(_downsample(arr), 0, 1)
+    """False-colour preview. `arr` may carry NaN for ground a provider never
+    measured (see `traversability.TraversabilityResult`) -- those pixels are
+    painted flat grey rather than run through the colour ramp, where a NaN
+    would otherwise silently cast to an arbitrary uint8 and could not be told
+    apart from a real, measured value."""
+    small = _downsample(arr)
+    unmeasured = np.isnan(small)
+    x = np.clip(np.where(unmeasured, 0.0, small), 0, 1)
     rgb = np.stack([
         np.clip(1.6 * x - 0.35, 0, 1) * 255,
         np.clip(1.2 * x + 0.05, 0, 1) * 255,
         np.clip(1.1 - 1.3 * x, 0, 1) * 255,
     ], axis=-1).astype(np.uint8)
+    rgb[unmeasured] = (60, 60, 60)
     return _png_data_uri(rgb)
 
 
@@ -583,9 +612,12 @@ def run_pipeline(path: Path, opts: dict, cache_dir: Path, job=None) -> Run:
         product_rasters["traversability"] = tr.score
         p4.images.append((f"traversability ({tr.provider})",
                           _product_preview(tr.score)))
+        unmeasured = tr.unmeasured_fraction
         bodies.append(
             f"# traversability -- provider `{tr.provider}`, "
             f"terrain {'measured' if tr.has_terrain else 'UNMEASURED'}\n"
+            + (f"# {unmeasured:.1%} of this raster is unmeasured (NaN) -- treat "
+               f"that ground as unknown, not impassable\n" if unmeasured else "")
             + "\n".join(f"# {n}" for n in tr.notes)
             + "\n" + s4_products.summarise(raster, tr.score, None))
         run.facts.append(("traversability", f"{tr.provider}"
@@ -1067,21 +1099,100 @@ service and returns 504 under load.</p>
 
 # --- server ----------------------------------------------------------------
 
+def _mark_timed_out(job: Job, timeout: float) -> None:
+    """Watchdog callback: fires once, `timeout` seconds after a job started
+    running `run_pipeline`. Only touches the job if it is still "running" --
+    if the pipeline finished (or failed on its own) first, this is a no-op.
+
+    This reports the job as failed so `/job/<id>` and `/api/job/<id>` stop
+    showing "running" forever. It does NOT reclaim the worker thread or
+    release `_LOCK` -- if the thread is truly stuck inside a call that never
+    returns to Python (e.g. `rasterio.open()` blocked on a hung FIFO), there
+    is no safe way to do that from here. See the JOB_TIMEOUT_S comment.
+    """
+    if job.status == "running":
+        job.status = "failed"
+        job.error = (
+            f"timed out after {timeout:.0f}s. The run is still occupying the "
+            f"pipeline lock and may never release it -- if uploads keep "
+            f"queuing behind this one, the server needs a restart."
+        )
+        print(f"  [{job.id}] TIMED OUT after {timeout:.0f}s (thread may "
+              f"still be running; _LOCK is not released by this)",
+              file=sys.stderr)
+
+
+def _evict_old_jobs() -> None:
+    """Bound the memory `_JOBS` holds via `Job.body`.
+
+    `_JOBS` itself is never shrunk -- `/jobs` shows every run's history for
+    the life of the process, and a `Job` without its body is a few hundred
+    bytes. What actually costs memory is `body`: the full rendered HTML
+    report, ~3.2 MB measured per run, and `_persist()` has already written
+    the same bytes to `out_dir/index.html` by the time a job reaches this
+    function. Past MAX_JOBS_RETAINED jobs, the oldest DONE/FAILED ones (by
+    the time-ordered id -- see `_new_job`) have `body` dropped; `_report_bytes`
+    reads the file back off disk for those. A "waiting" or "running" job is
+    never touched.
+    """
+    with _JOBS_LOCK:
+        if len(_JOBS) <= MAX_JOBS_RETAINED:
+            return
+        evictable = sorted(
+            jid for jid, j in _JOBS.items()
+            if j.status in ("done", "failed") and j.body is not None)
+        overflow = len(_JOBS) - MAX_JOBS_RETAINED
+        for jid in evictable[:overflow]:
+            _JOBS[jid].body = None
+
+
 def _run_job(job: Job, path: Path, opts: dict, cache_dir: Path,
              tmp: Path) -> None:
     """The worker thread. Never raises -- a failure is a job state, not a crash."""
+    timeout = JOB_TIMEOUT_S  # read fresh each call so tests can monkeypatch it
+    watchdog: threading.Timer | None = None
     try:
         if not _LOCK.acquire(blocking=False):
             job.step = "waiting for the current run to finish"
             print(f"  [{job.id}] queued behind another run", file=sys.stderr)
-            _LOCK.acquire()
+            # Block for at most `timeout` rather than forever: if whoever is
+            # holding `_LOCK` is wedged, every job behind it would otherwise
+            # queue in silence with no error and no way to tell what
+            # happened. This job gives up and reports itself failed instead;
+            # it does not free `_LOCK` for the ones still stuck behind it.
+            if not _LOCK.acquire(timeout=timeout):
+                job.status = "failed"
+                job.error = (
+                    f"gave up after waiting {timeout:.0f}s for the current "
+                    f"run to finish -- it has been active longer than the "
+                    f"{timeout:.0f}s timeout and is likely stuck. This job "
+                    f"never started; try again once the stuck run clears, "
+                    f"or restart the server."
+                )
+                print(f"  [{job.id}] FAILED: {job.error}", file=sys.stderr)
+                return
         try:
             job.status = "running"
+            # A second, independent safety net for the job that IS running:
+            # if `run_pipeline` itself hangs, this marks the job failed at
+            # the deadline even though the thread never returns. See
+            # `_mark_timed_out` and the JOB_TIMEOUT_S comment for what this
+            # does and does not fix.
+            watchdog = threading.Timer(timeout, _mark_timed_out,
+                                        args=(job, timeout))
+            watchdog.daemon = True
+            watchdog.start()
             run = run_pipeline(path, opts, cache_dir, job=job)
             body = page_results(run)
             job.body = body
             job.out_dir = _persist(job, run, body)
-            job.status = "done"
+            # A watchdog may have already declared this job failed (it ran
+            # past JOB_TIMEOUT_S but the call eventually returned anyway).
+            # The report is still written to disk above either way; the
+            # status the user was already shown is left as reported rather
+            # than flipped back to "done" behind their back.
+            if job.status != "failed":
+                job.status = "done"
             print(f"  [{job.id}] done in {job.elapsed:.1f}s -> {job.out_dir}",
                   file=sys.stderr)
         finally:
@@ -1095,8 +1206,11 @@ def _run_job(job: Job, path: Path, opts: dict, cache_dir: Path,
         job.detail = traceback.format_exc()
         print(f"  [{job.id}] CRASHED:\n{job.detail}", file=sys.stderr)
     finally:
+        if watchdog is not None:
+            watchdog.cancel()
         job.finished = time.time()
         shutil.rmtree(tmp, ignore_errors=True)
+        _evict_old_jobs()
 
 
 def _persist(job: Job, run: Run, body: bytes) -> Path:
@@ -1118,6 +1232,25 @@ def _persist(job: Job, run: Run, body: bytes) -> Path:
                 panel.body]
     (out / "report.txt").write_text("\n".join(txt), encoding="utf-8")
     return out
+
+
+def _report_bytes(job: Job) -> bytes | None:
+    """The rendered report for a job, in memory if still resident, else read
+    back from the copy `_persist()` wrote to disk.
+
+    `_evict_old_jobs()` drops `job.body` for old finished jobs to bound
+    memory; this is the read-side counterpart, so `/result/<id>` keeps
+    serving a legitimately finished run instead of 404ing once its body has
+    been evicted. Returns None only when there is truly nothing to serve
+    (job never finished, or its files are gone).
+    """
+    if job.body is not None:
+        return job.body
+    if job.out_dir is not None:
+        report = job.out_dir / "index.html"
+        if report.exists():
+            return report.read_bytes()
+    return None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1176,10 +1309,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(page_progress(job))
         if self.path.startswith("/result/"):
             job = self._job("/result/")
-            if job is None or job.body is None:
+            body = _report_bytes(job) if job is not None else None
+            if body is None:
                 return self._send(page_upload(
                     "That run has no report yet.", True), code=404)
-            return self._send(job.body)
+            return self._send(body)
         self._send(b"not found", "text/plain", 404)
 
     def do_POST(self):

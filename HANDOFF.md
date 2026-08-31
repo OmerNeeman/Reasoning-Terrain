@@ -63,7 +63,7 @@ and the data is gitignored. It **does** have a git remote now —
 | `src/segmap_digest/solutions/s1..s6` | The six map-consuming solutions, each a runnable naive implementation. |
 | `docs/solutions/S*.md` | One doc per solution: heuristics, open questions, options. |
 | `docs/pipeline.html` | Deep dive on the pipeline. **Written concurrently by another agent — do not edit from here.** |
-| `examples/smart_terrain_class_ids.json` | The wire-id → class-name mapping as read off the sinai drop. 47 entries. |
+| `src/segmap_digest/data/smart_terrain_class_ids.json` | The wire-id → class-name mapping as read off the sinai drop, shipped inside the package. 47 entries. |
 | `data/incoming/{sinai,aza,leb}/` | The real exports. Gitignored. |
 
 ---
@@ -374,7 +374,7 @@ almost everything, which is the same uselessness from the other end.)*
 
 **6 — aza's class mapping is unconfirmed, and nothing flags it.**
 The aza tiles carry no `ID_TO_LABEL_MAPPING` tag, so sinai's mapping is applied
-via `--classes examples/smart_terrain_class_ids.json`. **No warning is printed
+via `--classes src/segmap_digest/data/smart_terrain_class_ids.json`. **No warning is printed
 anywhere** — I checked stderr, the digest headers and the report. Worse, without
 `--classes` the mosaic path does not validate at all: `mosaic.py:84` passes raw
 wire ids straight through as if they were dense ids when a tile has no tag, and
@@ -515,8 +515,8 @@ segmap solve  s5   -i data/incoming/sinai/ --query "count House minarea 40"
 aza **requires** the class mapping (its tiles have no tag):
 
 ```bash
-segmap digest l0 -i data/incoming/aza/ --classes examples/smart_terrain_class_ids.json
-segmap report    -i data/incoming/aza/ --classes examples/smart_terrain_class_ids.json -o out/aza
+segmap digest l0 -i data/incoming/aza/ --classes src/segmap_digest/data/smart_terrain_class_ids.json
+segmap report    -i data/incoming/aza/ --classes src/segmap_digest/data/smart_terrain_class_ids.json -o out/aza
 ```
 
 `segmap report` writes a self-contained HTML page (verified: aza, 1 m 40 s, most

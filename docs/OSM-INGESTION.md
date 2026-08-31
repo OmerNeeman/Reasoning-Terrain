@@ -371,7 +371,8 @@ is why no finding calls either map wrong.
 ### Decided
 
 **D3 — class notes: build the infrastructure, content follows.** *(owner,
-2026-08-26)* Done: `docs/class_notes.md` is a template with all 47 classes
+2026-08-26)* Done: `src/segmap_digest/data/class_notes.md` (shipped inside the
+package; override with `$SEGMAP_CLASS_NOTES`) is a template with all 47 classes
 stubbed, `segmap notes` reports coverage ranked by area on your AOI,
 `segmap notes --check` validates, and `confused_with` already reaches S2's
 candidate shortlist. Fill any subset, in any order; the seeded `what_it_is`

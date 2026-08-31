@@ -34,6 +34,7 @@ re-derived from scratch or thrown away.
 
 from __future__ import annotations
 
+import importlib.resources
 import os
 import re
 from dataclasses import dataclass, field
@@ -41,27 +42,18 @@ from pathlib import Path
 
 from .taxonomy import BY_NAME, CLASSES, NAMES
 
-# Where the notes live unless told otherwise. A repo-relative default, so a
-# checkout carries its own class definitions.
-def _bundled(*relative: str) -> Path:
-    """Locate a file that ships with the REPO rather than inside the package.
-
-    `parents[2] / "docs" / x` only resolves while the package is an editable
-    install inside its own checkout. Under a plain `pip install .` it points at
-    a path that silently does not exist, and the notes vanish with nothing
-    saying why. Checked in order: repo layout, cwd, package `data/`.
-    """
-    here = Path(__file__).resolve()
-    for c in (here.parents[2].joinpath(*relative),
-              Path.cwd().joinpath(*relative),
-              here.parent.joinpath("data", relative[-1])):
-        if c.is_file():
-            return c
-    return here.parents[2].joinpath(*relative)
-
-
-DEFAULT_PATH = Path(os.environ.get("SEGMAP_CLASS_NOTES",
-                                   _bundled("docs", "class_notes.md")))
+# Where the notes live unless told otherwise: the template shipped inside the
+# package, found via `importlib.resources` so it resolves under an editable
+# install, a wheel install, or a zipped one alike -- no repo-relative guessing.
+#
+# `$SEGMAP_CLASS_NOTES` overrides it. That is the real editing workflow: an
+# analyst keeps their own class_notes.md outside the installed package and
+# points here at it; the bundled copy is only the starting template.
+_env_path = os.environ.get("SEGMAP_CLASS_NOTES")
+DEFAULT_PATH: Path = (
+    Path(_env_path) if _env_path else
+    importlib.resources.files("segmap_digest.data").joinpath("class_notes.md")
+)
 
 # The fields this module understands. Order is the order they are written and
 # printed in, and it is the order an expert should fill them: what it is, how you
@@ -81,14 +73,16 @@ FIELDS: tuple[str, ...] = (
 
 # The subset that code reads rather than the model.
 #
-# Only `confused_with` has a consumer today (`s2_adjudicate.candidates`, which
-# adds the named classes to the shortlist). `season`, `never` and `scale` are
-# recorded for planned consumers -- S6's phenology gate, a candidate prior, and
-# S2's area bands respectively -- and filling them moves no number yet. Saying
-# otherwise told an analyst their work was being used when it was not, which is
-# the same failure as an unattributed prior: see `taxonomy.RETIRED_PRIORS`.
-CONSUMED: tuple[str, ...] = ("confused_with",)
-PLANNED: tuple[str, ...] = ("season", "never", "scale")
+# `confused_with` (`s2_adjudicate.candidates`, adds the named classes to the
+# shortlist) and `scale` (`s2_adjudicate._geometry_score`, overrides the
+# guessed `AREA_BAND` when it parses) both have a consumer today. `season` and
+# `never` are recorded for planned consumers -- S6's phenology gate and a
+# candidate prior, respectively -- and filling them moves no number yet.
+# Saying otherwise told an analyst their work was being used when it was not,
+# which is the same failure as an unattributed prior: see
+# `taxonomy.RETIRED_PRIORS`.
+CONSUMED: tuple[str, ...] = ("confused_with", "scale")
+PLANNED: tuple[str, ...] = ("season", "never")
 MACHINE_READ: tuple[str, ...] = CONSUMED + PLANNED
 
 CONFIDENCE_VALUES = ("high", "medium", "low")
