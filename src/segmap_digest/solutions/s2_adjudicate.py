@@ -83,6 +83,18 @@ SWITCH_MARGIN = 0.15
 # separate them -- emit UNDECIDABLE instead of a coin flip.
 UNDECIDABLE_MARGIN = 0.08
 
+# Carbonate hardness, which is what the lithology twins actually turn on and the
+# thing a geological map can be asked for. Nari is grouped with the hard
+# carbonates because that is what the crust behaves as at the surface, which is
+# the only place this taxonomy looks. Basalt is not a carbonate at all and is
+# named as itself rather than forced into the pair.
+HARDNESS = {"Limestone": "hard", "Dolomite": "hard", "Nari": "hard",
+            "Chalk": "soft", "Marl": "soft"}
+
+
+def _hardness(lithology: str | None) -> str:
+    return HARDNESS.get(lithology or "", "non-carbonate")
+
 # Ceiling on how far a SATISFIED slope band can lift the morphology score above
 # the 0.5 neutral (the actual lift is this times the band's specificity, see
 # _morphology_score). 0.4, not 0.5, so that W_MORPHOLOGY * bonus < SWITCH_MARGIN:
@@ -423,12 +435,30 @@ def adjudicate(ridx: RegionIndex, region_id: int,
             b = BY_ID[cid(name_b)]
             if a.lithology and b.lithology and a.lithology != b.lithology \
                     and a.morphology == b.morphology:
+                # The verdict names the DATUM, not a product. It used to read
+                # UNDECIDABLE-NEEDS-geological-map, which for a Nari pair is an
+                # instruction nobody can carry out: nari is a surface calcrete
+                # crust that forms ON mapped bedrock, so it appears on no
+                # geological map at any scale, and "go get the geological map"
+                # sent a reviewer after a layer that does not exist. What the
+                # separation actually turns on is carbonate HARDNESS -- hard
+                # (limestone / dolomite / nari crust) against soft (chalk /
+                # marl) -- and that a geological map genuinely does carry. So
+                # the ask is the hardness class, and the rationale says which
+                # side of it each candidate sits on.
                 return Adjudication(
-                    region_id, incumbent, ranked, "UNDECIDABLE-NEEDS-geological-map",
-                    f"{a.name} and {b.name} differ only by lithology and score within "
-                    f"{UNDECIDABLE_MARGIN} of the leader; this separation is not "
-                    f"present in the segmentation, the DEM, or the imagery. A "
-                    f"geological map settles it.",
+                    region_id, incumbent, ranked,
+                    "UNDECIDABLE-NEEDS-hardness-class",
+                    f"{a.name} and {b.name} differ only by lithology "
+                    f"({a.lithology} vs {b.lithology}, "
+                    f"{_hardness(a.lithology)} vs {_hardness(b.lithology)} "
+                    f"carbonate) and score within {UNDECIDABLE_MARGIN} of the "
+                    f"leader. That separation is not present in the "
+                    f"segmentation, the DEM, or the imagery. It needs a "
+                    f"hardness class for this ground -- which a geological map "
+                    f"does carry, unlike a nari layer, which no service "
+                    f"publishes at any scale because nari is a crust on top of "
+                    f"whatever the map already says is there.",
                     osm=ref_ctx,
                 )
 

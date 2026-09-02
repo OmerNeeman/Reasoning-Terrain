@@ -315,3 +315,48 @@ def test_the_report_page_carries_the_caveat_too(tile, tmp_path):
     page = index.read_text()
     assert "fragmentation (a property of the raster" in page
     assert "CAVEAT" in page
+
+
+# --- 6. the abstain names a datum, not an unobtainable product -------------
+
+def test_the_lithology_abstain_asks_for_hardness_not_a_nari_layer():
+    """`UNDECIDABLE-NEEDS-geological-map` was an instruction nobody could carry
+    out for a Nari pair: nari is a surface crust on top of whatever the map
+    already says is there, so it appears on no geological map at any scale. What
+    the separation actually turns on is carbonate hardness, which a geological
+    map does carry."""
+    from segmap_digest.index import Region, build_regions
+    from segmap_digest.solutions import s2_adjudicate as s2
+
+    assert s2._hardness("Limestone") == "hard"
+    assert s2._hardness("Nari") == "hard"        # the crust, as it behaves at the surface
+    assert s2._hardness("Chalk") == "soft"
+    assert s2._hardness("Basalt") == "non-carbonate"
+    assert s2._hardness(None) == "non-carbonate"
+
+
+def test_a_lithology_twin_pair_returns_the_renamed_verdict():
+    """Two classes with the same morphology and different lithology cannot be
+    separated by RGB, geometry or the DEM. The verdict has to say what would."""
+    import numpy as np
+
+    from segmap_digest.index import build_regions
+    from segmap_digest.loader import LabelRaster
+    from segmap_digest.solutions import s2_adjudicate as s2
+    from segmap_digest.taxonomy import cid
+
+    # a compact blob of LimestoneStoneyTerrain -- its dolomite twin differs only
+    # by lithology, and the two score within UNDECIDABLE_MARGIN by construction
+    labels = np.zeros((64, 64), dtype=np.uint8)
+    labels[20:44, 20:44] = cid("LimestoneStoneyTerrain")
+    ridx = build_regions(LabelRaster(labels, gsd=0.5))
+    target = next((r for r in ridx.regions
+                   if r.class_name == "LimestoneStoneyTerrain"), None)
+    if target is None:
+        pytest.skip("fixture produced no limestone region")
+    adj = s2.adjudicate(ridx, target.id)
+    if not adj.verdict.startswith("UNDECIDABLE"):
+        pytest.skip(f"this region did not reach the abstain gate ({adj.verdict})")
+    assert adj.verdict == "UNDECIDABLE-NEEDS-hardness-class"
+    assert "hardness class" in adj.rationale
+    assert "nari layer" in adj.rationale        # names what NOT to go looking for

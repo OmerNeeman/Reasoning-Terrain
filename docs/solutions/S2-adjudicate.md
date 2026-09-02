@@ -8,7 +8,7 @@ when the evidence can't separate the candidates.
 
 **The refusal is the feature.** Limestone / Dolomite / Nari rocky terrain are
 not separable in RGB even for a human expert. A system that confidently picks
-one is manufacturing corruptions. `UNDECIDABLE-NEEDS-geological-map` is a
+one is manufacturing corruptions. `UNDECIDABLE-NEEDS-hardness-class` is a
 first-class verdict here, and the design goal is that it fires *often*.
 
 ---

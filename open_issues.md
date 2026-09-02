@@ -32,6 +32,18 @@ decided, and where it got to:
 | Q8b — segment both full orthos | **yes** | running, ~35 min each |
 | Q2, Q5, Q6, Q7 | not yet answered | open |
 
+A second round of answers came back on **2 September**:
+
+| Question | Answer | State |
+|---|---|---|
+| Q2 — the two-date disagreement | **run the discriminators** | **done — and the verdict is bad news**, see 5.2 |
+| Q7 — where engineering goes next | **georeference the answers** (2.8) | accepted; not started |
+| §4 cross-cutting — rename the nari abstain | **yes** | **done** — `UNDECIDABLE-NEEDS-hardness-class` |
+| §2.11 — the conflicting finding count | **settle it** | re-running `solve s1` on the sinai mosaic |
+| Q5 — soft-pred export · Q6 — S4 score-or-classes | owner is getting both settled | awaiting the answers |
+
+Running the discriminators also turned up a new defect in our own S6 — see 2.12.
+
 Deliberately **not** done: everything else in this file. In particular 2.4's
 underlying defect is unchanged — S1 now states that its speck check is "small and
 enclosed" rather than claiming a semantic test it does not perform. That is an
@@ -275,8 +287,28 @@ and called exactly nowhere.
   against 4,136 on one tile. Both are quoted as measurements of the same 20
   tiles. I did not re-run it (cold rebuild, ~24 min / 47 GB), so I cannot say
   which is current — but a repo whose whole argument is "numbers come from code"
-  cannot carry two of them for one quantity. Re-run `segmap solve s1 -i
-  data/incoming/sinai/` once and correct the loser.
+  cannot carry two of them for one quantity. **Being settled 2026-09-02:**
+  `segmap solve s1 -i data/incoming/sinai/` is re-running (cold rebuild over
+  1,194 Mpx at 59.3% classified); the loser gets corrected.
+
+**2.12 S6 has no guard against a pair that came from two different mappings.** ✔ new 2026-09-02
+Run over the full 197 Mpx pair that 5.2 rejects, `s6_change` reports **84.1% of
+co-valid pixels differ** and then adjudicates **61% of the differing area as
+`real-change`**, printing *"71% of the differing area is plausibly REAL
+change"*. It calls `House → Clutter` **demolition** over 48,255 m² and 2,579
+components, and `PavedRoad → DirtRoad` **infrastructure** over 1,623 components.
+Every one of those categories is defensible *given* two dates of one mapping —
+and the whole point of 5.2 is that this is not that. The categoriser has no
+precondition: nothing anywhere asks whether the two rasters are comparable
+before their difference is described.
+
+The check is cheap and the discriminators already are it: **built-class
+retention** (a pair where 18% of `House` stays `House` and asphalt becomes dirt
+is not two dates of one map) and **overall pixel agreement** (15.89% here).
+Either belongs in front of `compare()` as a stated refusal, exactly like the
+`registered=False` short-circuit that reviewers called exemplary. Without it, S6
+is at its most confident precisely where it is most wrong — the failure shape
+this repo names in its own design rules.
 
 ---
 
@@ -360,8 +392,14 @@ runs, most "change" is model drift, and nothing distinguishes them today. This
 one just stopped being hypothetical (5.2). Should transitions be localised to a
 polygon layer instead of an aggregate table?
 
-**Cross-cutting.** Retire `UNDECIDABLE-NEEDS-geological-map` for nari and rename
-it `NEEDS-hardness-class`: nari is a surface calcrete crust over mapped bedrock
+**Cross-cutting.** ✔ **DONE 2026-09-02** for the nari abstain: the verdict is now
+`UNDECIDABLE-NEEDS-hardness-class`, and the rationale names which side of the
+hard/soft carbonate split each candidate sits on and says outright that a nari
+layer is not the thing to go looking for. `s2_adjudicate.HARDNESS` groups nari
+with the hard carbonates, because that is what the crust behaves as at the
+surface, which is the only place this taxonomy looks. The original reasoning:
+retire `UNDECIDABLE-NEEDS-geological-map` for nari and rename it
+`NEEDS-hardness-class`: nari is a surface calcrete crust over mapped bedrock
 and no geological service answers it at any scale, while the map *does* split hard
 from soft carbonate, which is what actually controls those classes. And: the
 distribution is `reasoning-terrain` while the import package is `segmap_digest`
@@ -401,10 +439,34 @@ real-change / 17% noise / 12% demolition. `Rendzina → DryGrassland` alone is
 63,706 m² over 5,728 components, and `House → Clutter` is called demolition
 across **630 components**. Either the ground genuinely did that, or the segmenter
 reads the same ground differently across dates — which is exactly S6 open
-question 2, now with real numbers attached. **Nothing downstream should be
-trusted on this pair until it is settled.** Cheapest discriminator: the null test
-(same raster against itself) and a second crop over ground known not to have
-changed.
+question 2, now with real numbers attached.
+
+> **DISCRIMINATORS RUN 2026-09-02 — the pair is not differenceable.** Three
+> tests, all at the full 197 Mpx, none needing an opinion from outside the repo:
+>
+> 1. **Null test: all-quiet.** `s6_change.compare(A, A)` returns
+>    `changed_frac 0.000000%`, 0 events, no categories. So the machinery is not
+>    inventing change, and the disagreement is in the inputs.
+> 2. **Built surface, which cannot flip with a season.** Of 2022's `House` area
+>    only **18.2%** is `House` in 2025 — **45.5% becomes `Clutter`**. Of
+>    `PavedRoad`, **18.0%** survives and **53.0% becomes `DirtRoad`**.
+>    `BrickWall` retains **2.2%**, `Car` **0.0%**. Buildings do not vanish, and
+>    asphalt does not become dirt.
+> 3. **The whole map slides by superclass:** soil **−25.6 points** (34.7% →
+>    9.1%), agriculture **−11.8** (12.0% → 0.2% — the orchards are gone),
+>    vegetation **+40.6** (30.2% → 70.8%). Overall pixel agreement between the
+>    two dates: **15.89%**.
+>
+> A whole-scene orchard-to-vegetation and asphalt-to-dirt slide is not phenology.
+> **This is S6's open question 2 answered in the affirmative: these are not two
+> dates of one map, they are two mappings.** Either the segmenter was retrained
+> between the acquisitions or the domain shift moved the decision boundaries
+> wholesale, and *which* cannot be settled from inside this repo — it needs the
+> model version for each acquisition, which is exactly what S6 asked to have
+> logged. **Consequences:** no S6 number on this pair is reportable; the next S6
+> feature is model-version logging, not co-registration hardening; and 1.7 is
+> only half an unblock — we have a second date, not a comparable one.
+> Full output: `out/summary/discriminators.log`.
 
 **5.3 `roads` and `dsem_landcover` are dropped.** ✔ by design, today
 Both come free in the same forward pass — `roads` is a binary mask,
@@ -466,7 +528,10 @@ existing list and neither has moved. *Recommendation: DEM first — it is an
 afternoon, and it changes what the reviewed set would even be reviewing.*
 
 **Q2 — Is the two-date disagreement real change or model drift, and who settles it?**
-→ open.
+→ **ANSWERED: run the discriminators. Done — and they came back against the
+pair.** Null test all-quiet, built surface retaining 18%, asphalt becoming dirt,
+15.89% pixel agreement (5.2). What remains is not a code question: it needs the
+**model version for each acquisition** from whoever produced the imagery.
 87.4% of pixels differ between your two orthos (5.2). Until that is answered, S6
 on real data cannot be reported, and the answer decides whether S6's next feature
 is co-registration hardening or model-version logging. *Cheapest path: I run the
@@ -504,8 +569,9 @@ diggability, obstacle inventory), and the doc says outright that nothing is
 implemented because someone still has to choose. The score-vs-classes question
 must be answered first: it changes the output contract, not the tuning.
 
-**Q7 — Where should engineering effort go once Q3 is done?** Still open, and
-now the live one — Q3 is finished. Four candidates,
+**Q7 — Where should engineering effort go once Q3 is done?**
+→ **ANSWERED: georeference the answers (2.8).** Accepted, not started — it is
+the next piece of work. Four candidates were offered,
 in the order I would take them: **(a)** georeference the answers (2.8) — it is
 the difference between an answer and a usable one, and it is contained; **(b)**
 the `ui`/`showcase` findings (2.10), one of which lets any page on the internet

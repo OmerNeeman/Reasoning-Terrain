@@ -17,7 +17,7 @@ populated AOI RT will ever see.
 
 **2. The segmentation has no reference map.** RT's audit compares the labels
 only against themselves (geometry, slope, neighbours). For rock it says so and
-abstains — `UNDECIDABLE-NEEDS-geological-map`. For roads, buildings and water
+abstains — `UNDECIDABLE-NEEDS-hardness-class`. For roads, buildings and water
 the reference map *is available and free*, and RT was not reading it. On the aza
 AOI, 28.6% of the ground under an OSM road corridor is labelled `Shadow` and a
 further 24.4% `MaralBadlands` `[measured]` — the segmenter cannot see a street

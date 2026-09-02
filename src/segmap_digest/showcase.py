@@ -284,7 +284,7 @@ ALGOS = {
               "and refuses when the evidence cannot separate the candidates.",
  "why": "Limestone / Dolomite / Nari rocky terrain are not separable in RGB even "
         "for a human expert. A system that confidently picks one is manufacturing "
-        "corruptions. <code>UNDECIDABLE-NEEDS-geological-map</code> is a "
+        "corruptions. <code>UNDECIDABLE-NEEDS-hardness-class</code> is a "
         "first-class verdict, and it is designed to fire often.",
  "steps": [
   ("Build a candidate list", "The incumbent label plus the classes it is "
