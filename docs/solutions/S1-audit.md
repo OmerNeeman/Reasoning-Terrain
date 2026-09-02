@@ -219,8 +219,10 @@ finding about aza, and no threshold fixes it.
    10,788 false findings and was invisible until someone read the worklist.
 7. **Does the audit run per tile or per AOI?** Priors like "nari caps units" are
    regional statements; a tile crop can make a legitimate unit look isolated.
-   Measured: the same 20 tiles give 4,136 findings on one tile and 41,669 across
-   the mosaic — regions cut at seams get wrong areas and wrong neighbour lists,
+   Measured (post-roll-up figures, i.e. the "findings after" column above --
+   the 4,136/41,669 pair quoted here previously was the *pre*-roll-up column and
+   read as a contradiction of the table two screens up): the same 20 tiles give
+   2,484 findings on one tile and 26,592 across the mosaic — regions cut at seams get wrong areas and wrong neighbour lists,
    so the mosaic is the honest unit and the tile is the fast one.
 
 ## Options and extensions

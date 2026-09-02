@@ -39,7 +39,7 @@ A second round of answers came back on **2 September**:
 | Q2 — the two-date disagreement | **run the discriminators** | **done — and the verdict is bad news**, see 5.2 |
 | Q7 — where engineering goes next | **georeference the answers** (2.8) | accepted; not started |
 | §4 cross-cutting — rename the nari abstain | **yes** | **done** — `UNDECIDABLE-NEEDS-hardness-class` |
-| §2.11 — the conflicting finding count | **settle it** | re-running `solve s1` on the sinai mosaic |
+| §2.11 — the conflicting finding count | **settle it** | **done — there was no conflict.** 26,592 confirmed by re-run; one sentence was quoting a superseded column. My framing was wrong; see 2.11 |
 | Q5 — soft-pred export · Q6 — S4 score-or-classes | owner is getting both settled | awaiting the answers |
 
 Running the discriminators also turned up a new defect in our own S6 — see 2.12.
@@ -280,16 +280,21 @@ and called exactly nowhere.
   unused imports, one f-string with no placeholders). Confirmed present on `HEAD`
   as well as in the working tree, so they are not new — but it does mean nobody
   can use "ruff is clean" as a gate on this repo.
-- **Two documents disagree about the same measurement.** HANDOFF §11's table —
-  the one that says "all three verified by running `segmap solve s1` today"
-  (2026-08-27) — gives the sinai mosaic **26,592 findings over 178 root causes**.
-  `docs/solutions/S1-audit.md` open question 7 gives **41,669 across the mosaic**
-  against 4,136 on one tile. Both are quoted as measurements of the same 20
-  tiles. I did not re-run it (cold rebuild, ~24 min / 47 GB), so I cannot say
-  which is current — but a repo whose whole argument is "numbers come from code"
-  cannot carry two of them for one quantity. **Being settled 2026-09-02:**
-  `segmap solve s1 -i data/incoming/sinai/` is re-running (cold rebuild over
-  1,194 Mpx at 59.3% classified); the loser gets corrected.
+- ~~**Two documents disagree about the same measurement.**~~ ✔ **SETTLED
+  2026-09-02, and my own framing of it was wrong.** I re-ran
+  `segmap solve s1 -i data/incoming/sinai/` over the full 1,194 Mpx mosaic:
+  **133,976 regions, 178 root causes, 26,592 candidate findings, 15/33 classes
+  checked, 3.0% of area** — HANDOFF §11's figures exactly, and the same in every
+  digit. So nothing was in conflict. `S1-audit.md`'s own table has *two* count
+  columns, **before** and **after** the roll-up, and 41,669 is the before-column
+  figure for the same mosaic whose after-figure is 26,592. What was actually
+  wrong was one sentence — open question 7 — quoting the *before* column in the
+  present tense two screens below a table that gives both, which reads as a
+  contradiction of it. That sentence now quotes the after column (2,484 on one
+  tile, 26,592 across the mosaic) and says why. **The lesson is mine:** I
+  reported "two documents disagree" from two greps and an unwillingness to spend
+  five minutes of compute. The rebuild cost 5 min 06 s and 27 GB, not the ~24 min
+  and 47 GB the README's cold-path table led me to quote.
 
 **2.12 S6 has no guard against a pair that came from two different mappings.** ✔ new 2026-09-02
 Run over the full 197 Mpx pair that 5.2 rejects, `s6_change` reports **84.1% of
