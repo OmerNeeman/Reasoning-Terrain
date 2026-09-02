@@ -8,6 +8,7 @@ dist/
 examples/*.dem.npy
 data/incoming/*
 !data/incoming/README.md
+data/raw/
 out/
 .segmap_cache/
 .env.rt

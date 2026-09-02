@@ -20,13 +20,30 @@ from pathlib import Path
 
 import numpy as np
 
-from .loader import LabelRaster, class_map, class_map_from_tags, geotiff_gsd, remap
+import sys
+
+from .loader import (LabelRaster, _check, class_map, class_map_from_tags,
+                     geotiff_gsd, remap)
 
 
 def tile_paths(directory: str | Path) -> list[Path]:
     d = Path(directory)
     return sorted(p for p in d.iterdir()
                   if p.suffix.lower() in (".tif", ".tiff"))
+
+
+def _check_tile(raw: np.ndarray, path: Path) -> np.ndarray:
+    """`loader._check`, with the offending tile named.
+
+    The single-tile path already refuses a raster whose values are outside
+    0..N_CLASSES-1 and tells the operator to supply `--classes`. The mosaic path
+    used to skip that check entirely, which is how a sparse-wire-id tile with no
+    mapping tag got as far as `digests.py`.
+    """
+    try:
+        return _check(raw)
+    except ValueError as exc:
+        raise ValueError(f"{path.name}: {exc}") from None
 
 
 def load_mosaic(directory: str | Path, gsd: float | None = None,
@@ -42,16 +59,32 @@ def load_mosaic(directory: str | Path, gsd: float | None = None,
             "not to produce an empty report.)"
         )
 
-    heads = []
+    # Where each tile's id mapping came from. A mapping GIVEN on the command line
+    # is one borrowed from somewhere else -- the aza drop is read with the sinai
+    # drop's mapping, and until now nothing anywhere said so. Getting that wrong
+    # renames every class on the map, so the borrowing is announced rather than
+    # inferred from the absence of a complaint.
+    given = class_map(classes)
+    heads, tagged, borrowed, untranslated = [], [], [], []
     for p in paths:
         with rasterio.open(p) as src:
+            own = class_map_from_tags(src.tags())
             heads.append({
                 "path": p, "w": src.width, "h": src.height,
                 "transform": src.transform, "crs": src.crs,
                 "res": (src.transform.a, src.transform.e),
                 "nodata": src.nodata, "gsd": geotiff_gsd(src),
-                "mapping": class_map(classes) or class_map_from_tags(src.tags()),
+                "mapping": given or own,
             })
+        (tagged if own else borrowed if given else untranslated).append(p.name)
+    if borrowed:
+        src_name = classes if isinstance(classes, (str, Path)) else "the given dict"
+        print(f"# id mapping: {len(borrowed)} of {len(paths)} tiles carry no "
+              f"ID_TO_LABEL_MAPPING tag and are read with the mapping from "
+              f"{src_name}. That mapping is from another export -- if it is the "
+              f"wrong one, every class name on this AOI is wrong and nothing "
+              f"downstream can tell. ({', '.join(borrowed[:3])}"
+              f"{', ...' if len(borrowed) > 3 else ''})", file=sys.stderr)
 
     crss = {str(h["crs"]) for h in heads}
     if len(crss) > 1:
@@ -81,7 +114,13 @@ def load_mosaic(directory: str | Path, gsd: float | None = None,
     for row, col, h in placed:
         with rasterio.open(h["path"]) as src:
             raw = src.read(1)
-        block = remap(raw, h["mapping"]) if h["mapping"] else raw.astype(np.uint8)
+        # `_check` on the untranslated path, exactly as `loader._load_labels`
+        # does for a single tile. Without it a tile whose ids are sparse wire ids
+        # was passed through as if they were dense taxonomy ids and surfaced much
+        # later as a bare `KeyError: np.int64(94)` out of `digests.py` -- three
+        # modules from the file that caused it.
+        block = (remap(raw, h["mapping"]) if h["mapping"]
+                 else _check_tile(raw, h["path"]))
         labels[row:row + h["h"], col:col + h["w"]] = block
         if h["nodata"] is not None:
             block_valid = raw != raw.dtype.type(h["nodata"])

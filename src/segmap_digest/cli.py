@@ -11,6 +11,7 @@ import numpy as np
 from . import audit as audit_mod
 from . import cache as cache_mod
 from . import digests, loader, synth
+from . import segment as segment_mod
 from .taxonomy import legend as taxonomy_legend
 
 
@@ -247,6 +248,30 @@ def cmd_synth(args) -> None:
           f"{out.with_suffix('.dem.npy')}, {out.with_suffix('.png')}")
 
 
+def cmd_segment(args) -> None:
+    """Imagery in, label raster out: the step before every other command.
+
+    Deliberately not folded into `report`. This is the only verb in the repo
+    that costs GPU-minutes-to-CPU-hours and writes a file worth keeping, and a
+    pipeline that silently re-ran the segmenter every time someone asked a
+    question would be both slow and impossible to reason about. Run it once,
+    keep the raster, point everything else at it.
+    """
+    from . import segment as seg
+
+    try:
+        r = seg.segment_geotiff(
+            args.input, args.out, model=args.model, native_gsd=args.model_gsd,
+            gsd=args.gsd, tile=args.tile, halo=args.halo, max_mpx=args.max_mpx,
+            gpu=args.gpu, threads=args.threads,
+            allow_mismatch=args.allow_gsd_mismatch, classes=args.classes,
+            progress=None if args.quiet else seg.stderr_progress(),
+        )
+    except seg.SegmentError as exc:
+        raise SystemExit(f"segmap segment: {exc}")
+    print(r.summary(loader.class_map(args.classes or seg.CLASSES_JSON)))
+
+
 def cmd_preview(args) -> None:
     r = _load(args)
     from PIL import Image
@@ -415,12 +440,18 @@ def cmd_report(args) -> None:
     second = (loader.load(args.second, gsd=args.gsd, dem=args.dem,
                           classes=args.classes)
               if args.second else None)
+    # One fetch, the union of what S1/S2/S3/S4 each ask for on the `solve`
+    # path -- so the report's four sections see the same second map rather than
+    # four differently-burned ones.
+    osm = _osm(r, args, layers=("road", "building", "water", "flow",
+                                "built_landuse", "barrier"))
     index = report_mod.build(
         r, args.out,
         source=args.input or f"synthetic fixture (seed {args.seed})",
         second=second, chip_px=args.chip, limit=args.limit,
         synthetic=not args.input,
         ridx=_regions(r, args), cidx=_chips(r, args, size=args.chip),
+        osm=osm,
     )
     print(f"wrote {index}\nopen it with:  xdg-open {index}")
 
@@ -671,6 +702,48 @@ def main(argv: list[str] | None = None) -> None:
     _add_input_args(p)
     p.add_argument("-o", "--out", default="examples/tile")
     p.set_defaults(func=cmd_synth)
+
+    p = sub.add_parser("segment", help="run the Smart Terrain segmenter over an "
+                                      "RGB ortho and write the label raster "
+                                      "every other command reads")
+    p.add_argument("-i", "--input", required=True,
+                   help="RGB GeoTIFF (3+ bands). A single-band file is already "
+                        "a label raster -- this step is what produces one.")
+    p.add_argument("-o", "--out", required=True, help="output label GeoTIFF")
+    p.add_argument("--model", default=None,
+                   help="ONNX weights to use. Default: the closest native "
+                        "resolution found in ./models (or $SEGMAP_ST_MODELS).")
+    p.add_argument("--model-gsd", type=float, default=None,
+                   choices=sorted(segment_mod.MODELS),
+                   help="pick the model by the resolution it was trained at, "
+                        "instead of by the raster's own")
+    p.add_argument("--gsd", type=float, default=None,
+                   help="the imagery's metres per pixel, when its header is wrong "
+                        "or absent. This is what chooses the model.")
+    p.add_argument("--tile", type=int, default=segment_mod.DEFAULT_TILE,
+                   help=f"interior tile size in px (default "
+                        f"{segment_mod.DEFAULT_TILE})")
+    p.add_argument("--halo", type=int, default=segment_mod.DEFAULT_HALO,
+                   help=f"context padding per side, predicted and discarded, so "
+                        f"tile seams do not print themselves into the map "
+                        f"(default {segment_mod.DEFAULT_HALO}). tile + 2*halo "
+                        f"must be a multiple of {segment_mod.SIZE_MULTIPLE}.")
+    p.add_argument("--max-mpx", type=float, default=None,
+                   help="segment a centred window of at most N megapixels, at "
+                        "full resolution, and say so in the output's tags")
+    p.add_argument("--classes", default=None,
+                   help="JSON {wire_id: class_name} to write into the output's "
+                        "ID_TO_LABEL_MAPPING tag (default: the bundled mapping)")
+    p.add_argument("--gpu", action="store_true",
+                   help="ask for CUDAExecutionProvider; falls back to CPU with a "
+                        "warning if this onnxruntime has none")
+    p.add_argument("--threads", type=int, default=None,
+                   help="onnxruntime intra-op threads (default: its own choice)")
+    p.add_argument("--allow-gsd-mismatch", action="store_true",
+                   help="run even when the imagery's resolution is far from the "
+                        "model's native one, and own the result")
+    p.add_argument("--quiet", action="store_true", help="no per-tile progress")
+    p.set_defaults(func=cmd_segment)
 
     p = sub.add_parser("preview", help="write a colourised PNG of a label raster")
     _add_input_args(p)

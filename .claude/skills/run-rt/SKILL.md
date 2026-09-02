@@ -23,7 +23,26 @@ ls data/incoming/leb/*.tif 2>/dev/null | head -1
 ```
 
 - If that lists a file, use `data/incoming/leb` as `-i`/upload input for
-  steps 2 and 3, and pick any one `.tif` from it for step 3's upload.
+  steps 2 and 3.
+- **For step 3's single-tile upload, do not just take the first one.**
+  `data/incoming/leb` has two 94%-nodata edge tiles (`x3307_*`) whose
+  centred 6 Mpx crop is *entirely* nodata, and `head -1` lands on one of
+  them every time. Pick a tile with data:
+  ```bash
+  for f in data/incoming/leb/*.tif; do
+    python -c "
+import sys
+from segmap_digest import loader
+r = loader.load(sys.argv[1], classes='src/segmap_digest/data/smart_terrain_class_ids.json')
+c = loader.crop_to_max_mpx(r, 6.0)
+print(f'{1 - c.nodata_frac:6.1%}  {sys.argv[1]}')" "$f"
+  done | sort -r | head -1
+  ```
+  On this drop the four `x3308_*`/`x3309_*` tiles come back 50-56%
+  classified and the two `x3307_*` come back 0.0%. An all-nodata crop is
+  a legitimate input and `s4_products.summarise` now says so rather than
+  raising -- but it exercises none of the pipeline, so it is the wrong
+  tile to demo with.
 - If it's empty, generate a synthetic tile instead and say so plainly
   (don't silently substitute):
   ```bash

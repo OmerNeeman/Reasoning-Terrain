@@ -29,6 +29,7 @@ import numpy as np
 
 from ..audit import (
     SPECK_MAX_PX,
+    SPECK_MIN_CLASS_DISTANCE,
     SPECK_MIN_PX,
     Finding,
     audit,
@@ -483,7 +484,57 @@ def fragmentation_block(report: AuditReport) -> str:
             f"a measurement of boundary smoothness per class pair, not as a list "
             f"of label errors -- which is what the roll-up turns them into."
         )
+        lines.append(speck_distance_caveat())
     return "\n".join(lines)
+
+
+def speck_distance_caveat() -> str:
+    """What `isolated-speck` actually tests, measured rather than asserted.
+
+    The check is documented as "a small component of one class enclosed by a
+    *semantically distant* host", and the distant-host half is carried by
+    `class_distance` against `SPECK_MIN_CLASS_DISTANCE`. Enumerating the taxonomy shows
+    that half does almost nothing: every cross-superclass pair scores exactly
+    1.0, and the great majority of all ordered pairs clear the threshold, so the
+    strangeness term is a near-constant and the check reduces to "small and
+    enclosed".
+
+    Stating it is the whole fix, and deliberately so. The alternatives are a
+    measured confusion matrix (nobody has one) or a compatibility relation saying
+    which pairs are *not* contradictions -- vegetation over soil being the case
+    that generates most of these findings. Inventing that relation here would be
+    a new unattributed prior, which is exactly what `taxonomy.RETIRED_PRIORS`
+    exists to remember the cost of. So: no new prior, and no silent overclaim
+    either. The numbers below are computed, not quoted.
+    """
+    from ..taxonomy import N_CLASSES, SUPERCLASS_OF, class_distance
+
+    cross = far = total = 0
+    cross_all_max = True
+    for a in range(N_CLASSES):
+        for b in range(N_CLASSES):
+            if a == b:
+                continue
+            d = class_distance(a, b)
+            total += 1
+            far += d >= SPECK_MIN_CLASS_DISTANCE
+            if SUPERCLASS_OF[a] != SUPERCLASS_OF[b]:
+                cross += 1
+                cross_all_max &= d == 1.0
+    return (
+        f"# CAVEAT -- this check is 'small and enclosed', not 'small, enclosed "
+        f"and semantically odd'. Its distant-host term admits {far / total:.0%} "
+        f"of all {total} ordered class pairs at the {SPECK_MIN_CLASS_DISTANCE} "
+        f"threshold"
+        + (f", and all {cross} cross-superclass pairs score exactly 1.0"
+           if cross_all_max else "")
+        + ". So the strangeness contribution to severity is near-constant and "
+        "these findings are ranked by enclosure and smallness alone. A pair that "
+        "co-occurs by definition -- grass on soil -- scores as strange as one "
+        "that cannot. Closing this needs a measured confusion matrix or a "
+        "compatibility relation from the class owner; it must NOT be closed by "
+        "adding a prior (see taxonomy.RETIRED_PRIORS)."
+    )
 
 
 def render(report: AuditReport, budget: int = 25) -> str:

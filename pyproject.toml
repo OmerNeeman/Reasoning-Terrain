@@ -18,6 +18,10 @@ geo = ["rasterio>=1.3"]
 # `segmap ask` drives the SDK's beta tool runner and hands beta_tool an explicit
 # input_schema; both are recent.
 llm = ["anthropic>=0.116"]
+# `segmap segment` runs the Smart Terrain ONNX models. The weights themselves are
+# half a gigabyte each and are not shipped: they live in ./models (or
+# $SEGMAP_ST_MODELS). Everything else in the CLI runs without this.
+st = ["onnxruntime>=1.16", "rasterio>=1.3"]
 dev = ["pytest>=7"]
 
 [project.scripts]
@@ -28,3 +32,8 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "segmap_digest.data" = ["*.json", "*.md"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: touches the half-gigabyte ONNX weights or real imagery; skips when absent",
+]

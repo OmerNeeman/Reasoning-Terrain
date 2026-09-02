@@ -567,6 +567,9 @@ def osm_delta_from(raster: LabelRaster, before: np.ndarray, after: np.ndarray,
     if osm is None:
         return ""
     ok = raster.valid
+    if raster.n_valid == 0:
+        return ("# OSM overlay: this window has no classified pixels, so there is "
+                "no before/after to compare.")
     diff = np.abs(after - before)
     moved = diff > 1e-6
     if ok is not None:
@@ -596,9 +599,24 @@ def osm_delta_from(raster: LabelRaster, before: np.ndarray, after: np.ndarray,
 
 def summarise(raster: LabelRaster, arr: np.ndarray, ridx: RegionIndex | None = None,
               top_k: int = 12) -> str:
-    """Per-superclass means, plus the worst/best regions if an index is given."""
+    """Per-superclass means, plus the worst/best regions if an index is given.
+
+    An AOI window can legitimately hold **no classified pixels at all** -- a
+    centred crop of a 94%-nodata edge tile is the case that found this -- and
+    then there is no distribution to describe. Every statistic below reduces over
+    `arr[valid]`, so on an empty selection `mean` warns and `percentile` raises
+    `IndexError` from inside numpy. That is a real answer ("this window is
+    entirely unclassified") arriving as a traceback three frames from the code
+    that could say so, which is why it is said here instead.
+    """
     ok = raster.valid
     vals = arr if ok is None else arr[ok]
+    if vals.size == 0:
+        return ("# no classified pixels in this window: every pixel is nodata, so "
+                "there is no value distribution, no per-superclass mean and no "
+                "region ranking to report. This is a statement about the crop, "
+                "not about the ground -- widen it, or pick a window that "
+                "overlaps data.")
     lines = [
         f"# value distribution over classified pixels: mean {vals.mean():.2f}, "
         f"p10 {np.percentile(vals, 10):.2f}, p90 {np.percentile(vals, 90):.2f}",

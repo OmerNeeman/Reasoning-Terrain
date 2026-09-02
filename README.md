@@ -13,7 +13,10 @@ pixels. The class names are the interface between them — which makes the class
 definitions in [`taxonomy.py`](src/segmap_digest/taxonomy.py) the single
 highest-leverage artifact here.
 
-No RGB imagery is involved anywhere in this pipeline.
+Until this session no RGB imagery was involved anywhere in this pipeline.
+`segmap segment` is now the one command that touches it, and it exists to
+*produce* the label raster everything else consumes -- nothing downstream of
+it reads a pixel of imagery.
 
 ---
 
@@ -23,12 +26,15 @@ No RGB imagery is involved anywhere in this pipeline.
 pip install -e .            # numpy, scipy, pillow
 pip install -e '.[geo]'     # + rasterio, for GeoTIFF input
 pip install -e '.[llm]'     # + anthropic, for the `ask` command
+pip install -e '.[st]'      # + onnxruntime, for `segmap segment` (runs the model)
 ```
 
 Everything runs with **zero data** — [`synth.py`](src/segmap_digest/synth.py)
-generates a spatially coherent fixture tile (terra rossa on hard carbonate,
-rendzina on chalk, badlands only where it's steep, maquis on shaded slopes, a
-village with roads and parked cars). Swap in a real tile with `-i tile.tif` the
+generates a spatially coherent fixture tile (badlands only where it's steep,
+maquis on shaded slopes, a village with roads and parked cars). Its soil layout
+still follows the *retired* parent-rock hypothesis -- see
+`taxonomy.RETIRED_PRIORS` -- so the fixture is coherent, not correct, and it is
+not evidence for anything about soils. Swap in a real tile with `-i tile.tif` the
 moment you have one.
 
 ```bash
@@ -43,6 +49,53 @@ segmap legend --full                 # the 47 class definitions
 
 New here? [**QUICKSTART.md**](QUICKSTART.md) is ten minutes, no API key, with
 ten real questions and their real output.
+
+### Before all of it: imagery → labels
+
+Every command above starts from a **label** raster. `segmap segment`
+([`segment.py`](src/segmap_digest/segment.py)) is the step that produces one:
+RGB ortho in, single-band wire-id GeoTIFF out, via the Smart Terrain ONNX
+models.
+
+```bash
+segmap segment -i data/raw/2022-10-29.tif -o out/labels/2022-10-29.tif
+segmap report  -i out/labels/2022-10-29.tif -o out/aoi     # ...and on as usual
+```
+
+The models are **not in the repo** (half a gigabyte each). Drop
+`ST_12_5cm_model.onnx` / `ST_50cm_model.onnx` in `models/`, or point
+`$SEGMAP_ST_MODELS` at wherever they live. (The 12.5 cm weights ship named
+`ST_15cm_model.onnx`, which they are not — that file is byte-identical to the
+product's `RESOLUTION_12_5` release. The old name is still recognised.)
+
+Four things worth knowing about it:
+
+- **The model emits one class index per pixel, not a probability stack.** Its
+  `preds` output *is* the answer — a sparse product wire id in 0..241, the same
+  id space as [`smart_terrain_class_ids.json`](src/segmap_digest/data/smart_terrain_class_ids.json).
+  Nothing is arg-maxed here, and the written file carries the mapping in its
+  `ID_TO_LABEL_MAPPING` tag, so `loader` translates it to taxonomy ids exactly
+  as it does for a tile that arrived from the product. `roads` and
+  `dsem_landcover` come free in the same forward pass and are dropped — RT has
+  no consumer for either.
+- **One model per ground resolution, and the wrong one is undetectable.** 12.5 cm
+  and 50 cm are separate networks; run at the wrong scale you get a plausible map
+  of terrain that isn't there. The model is chosen from the raster's own
+  metres-per-pixel *by ratio*, warned about past 5% off native, and refused past
+  25% (`--allow-gsd-mismatch` to insist).
+- **Tile seams are predicted and thrown away.** `--tile 1024 --halo 128` feeds
+  the network 1280² and keeps the middle 1024², so no tile boundary prints itself
+  into the map.
+- **`--max-mpx` crops before inference, not after**, so a 4 Mpx look at a 200 Mpx
+  ortho costs 4 Mpx of model time — and the crop is stated in the output's tags.
+
+Measured on CPU (28 cores, `--threads 24`): **0.09 Mpx/s at the default
+`--tile 1024`, peak 18 GB RSS** — so ≈35 min and ≈24 Mpx of headroom-free RAM for
+a 200 Mpx ortho. `--tile 2048` is ~25% faster per useful pixel and cost **67 GB
+RSS** on the same machine; the tile size is the memory knob, and the default is
+the one that fits a laptop. `--gpu` asks for `CUDAExecutionProvider` and falls
+back to CPU with a warning if this onnxruntime has none — the plain `onnxruntime`
+wheel does not.
 
 ### On real exports
 

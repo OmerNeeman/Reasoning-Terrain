@@ -157,7 +157,14 @@ def build(
     synthetic: bool = True,
     ridx=None,
     cidx=None,
+    osm=None,
 ) -> Path:
+    # `osm` is the second map, or None. It used to be neither: `--osm` was
+    # accepted by `segmap report`, this module contained no reference to it at
+    # all, and so every `Evidence.reference` on the page was None -- the report
+    # rendered identically with and without the flag, and said nothing about it.
+    # `solve` and `playground` had always wired it correctly; only `report` did
+    # not, which is the command the README leads with.
     out = Path(outdir)
     (out / "img").mkdir(parents=True, exist_ok=True)
     from PIL import Image
@@ -182,7 +189,7 @@ def build(
     # were quoted for, so it is the one this report names out loud.
     for name, kw in (("trafficability", {}), ("concealment", {"target": "person"}),
                      ("built_fabric", {}), ("change_volatility", {})):
-        arr = s4_products.compute(raster, name, **kw)
+        arr = s4_products.compute(raster, name, osm=osm, **kw)
         s4_products.to_png(arr[::step, ::step], str(out / "img" / f"{name}.png"))
         # over classified pixels, matching the summary table below -- averaging
         # in the zeroed nodata would report a different number for the same thing
@@ -211,6 +218,20 @@ def build(
 
     if raster.subset_note:
         S.append(f'<div class="warn">{_esc(raster.subset_note)}</div>')
+
+    # Whether the second map is in, stated on the page. A reader cannot otherwise
+    # tell an S2 evidence row with no reference from one where no reference map
+    # was ever loaded, and those mean opposite things.
+    if osm is None:
+        S.append('<div class="warn">No OSM layer joined. Every S2 evidence row '
+                 'reads <code>reference: none</code> because there is no reference '
+                 'map, not because OSM disagrees — pass <code>--osm</code> to get '
+                 'the second opinion.</div>')
+    else:
+        n_ways = len(getattr(osm.vectors, "ways", ()) or ())
+        S.append(f'<p class="note">OSM joined: {n_ways} ways burned onto this '
+                 f'grid. S1 reference checks, S2 evidence and the S4 overlay all '
+                 f'use it below.</p>')
 
     if raster.dem is None:
         S.append('<div class="warn">No DEM supplied. Slope and aspect are zero, '
@@ -245,7 +266,7 @@ def build(
 
     # --- S1 ----------------------------------------------------------------
     sec("S1 — consistency audit", "s1")
-    rep = s1_audit.run(ridx)
+    rep = s1_audit.run(ridx, osm=osm, raster=raster)
     S.append(f'<div class="kpi">'
              f'<div><b>{len(ridx.regions)}</b><span>regions</span></div>'
              f'<div><b>{len(rep.findings)}</b><span>candidate findings</span></div>'
@@ -261,6 +282,14 @@ def build(
         S.append(tsv_table("\n".join(rows)))
     S.append("<h3>Review worklist</h3>")
     S.append(tsv_table(s1_audit.worklist(rep, budget=limit)))
+    # Fragmentation, and with it the caveat about what `isolated-speck` actually
+    # tests. The CLI's `render` has always carried both; the report was building
+    # its own S1 section and dropping them, which is how a page could show
+    # thousands of speck findings with no statement that their "semantically
+    # distant host" term admits 91% of all class pairs.
+    frag = s1_audit.fragmentation_block(rep)
+    if frag:
+        S.append(tsv_table(frag))
 
     # --- S2 ----------------------------------------------------------------
     sec("S2 — confusion adjudication", "s2")
@@ -271,7 +300,8 @@ def build(
             rids.append(f.region_id)
         if len(rids) >= 8:
             break
-    adjs = [s2_adjudicate.adjudicate(ridx, r) for r in rids]
+    adjs = [s2_adjudicate.adjudicate(ridx, r, osm=osm, raster=raster)
+            for r in rids]
     if adjs:
         S.append(f'<p class="note">Adjudicating the {len(adjs)} regions S1 flagged '
                  f'hardest. UNDECIDABLE is a wanted outcome, not a failure.</p>')
@@ -294,6 +324,10 @@ def build(
              'triage. With no detector in the pipeline, the budgeted resources are '
              'analyst attention and LLM tokens — same scorer, different consumer. '
              'The dispatch/cost wording below has not been rewritten yet.</div>')
+    if osm is not None:
+        from .osm import chipfeat
+
+        chipfeat.attach(cidx, raster, osm)
     policy, sel = s3_triage.run(cidx, "vehicles", budget_frac=0.20)
     S.append(tsv_table(s3_triage.render(sel, policy, top_k=limit)))
 
@@ -327,6 +361,8 @@ def build(
                  f'mean {product_means[name]:.2f}</figcaption></figure>')
     S.append("</div>")
     S.append("<h3>trafficability by superclass</h3>")
+    if osm is not None:
+        S.append(tsv_table(s4_products.osm_delta(raster, "trafficability", osm)))
     S.append(tsv_table(s4_products.summarise(raster, trafficability)))
 
     # --- S5 ----------------------------------------------------------------
