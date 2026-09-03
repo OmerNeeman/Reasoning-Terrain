@@ -1,0 +1,951 @@
+<title>Three Days on RT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..500&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+/* --------------------------------------------------------------------------
+   Palette continues the issue register's: hue by superclass, taken from the
+   repo's own class colormap and desaturated to document weight. The CHART
+   palette is a separate, validated thing -- the semantically obvious pairing
+   (soil sienna vs vegetation green) failed CVD separation at deutan dE 3.3, so
+   the series carry the rock-amber and water-slate hues instead, which pass on
+   both grounds. Correctness beat literalism.
+   -------------------------------------------------------------------------- */
+:root {
+  --bg:#eceeec; --surface:#f7f8f6; --sunken:#e3e6e2;
+  --ink:#1b1e1b; --ink-soft:#3d423e; --muted:#5f6763;
+  --hair:#cdd2cc; --hair-firm:#b6bdb6;
+  --accent:#7d6410; --accent-wash:#f0e9d2;
+  --fixed:#2c6f38; --fixed-wash:#dfeadf;
+  --input:#14497c; --input-wash:#dde5ee;
+  --stated:#6f5670; --stated-wash:#e8e2e8;
+  --decide:#8a4b1f; --decide-wash:#f0e2d8;
+
+  /* charts -- validated: light categorical (#8a6f14,#1d5c93) ALL PASS */
+  --s-a:#8a6f14;            /* 2022 / before */
+  --s-b:#1d5c93;            /* 2025 / after  */
+  --pos:#1d5c93;            /* diverging: gained share */
+  --neg:#8a4b1f;            /* diverging: lost share   */
+  --bar:#8a6f14;            /* single-hue magnitude    */
+  --bar-mute:#b5ab8a;
+  --grid:#d7dbd6;
+  --shadow:0 1px 2px rgba(27,30,27,.05), 0 8px 24px -16px rgba(27,30,27,.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#111417; --surface:#171b1f; --sunken:#0d1013;
+    --ink:#e7eae7; --ink-soft:#c3c9c4; --muted:#8b9491;
+    --hair:#262c31; --hair-firm:#384146;
+    --accent:#e2bc36; --accent-wash:#241f10;
+    --fixed:#63c073; --fixed-wash:#101d13;
+    --input:#6ea3d6; --input-wash:#0e1720;
+    --stated:#b697b7; --stated-wash:#1b151c;
+    --decide:#d98a5a; --decide-wash:#1f1510;
+    /* validated: dark categorical (#b8862a,#4e86c0) ALL PASS */
+    --s-a:#b8862a; --s-b:#4e86c0;
+    --pos:#4e86c0; --neg:#c0703f;
+    --bar:#b8862a; --bar-mute:#5d5946;
+    --grid:#2b3237;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#111417; --surface:#171b1f; --sunken:#0d1013;
+  --ink:#e7eae7; --ink-soft:#c3c9c4; --muted:#8b9491;
+  --hair:#262c31; --hair-firm:#384146;
+  --accent:#e2bc36; --accent-wash:#241f10;
+  --fixed:#63c073; --fixed-wash:#101d13;
+  --input:#6ea3d6; --input-wash:#0e1720;
+  --stated:#b697b7; --stated-wash:#1b151c;
+  --decide:#d98a5a; --decide-wash:#1f1510;
+  --s-a:#b8862a; --s-b:#4e86c0;
+  --pos:#4e86c0; --neg:#c0703f;
+  --bar:#b8862a; --bar-mute:#5d5946;
+  --grid:#2b3237;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.8);
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:Newsreader, Georgia, "Times New Roman", serif;
+  font-size:17px; line-height:1.68; -webkit-font-smoothing:antialiased;
+}
+.wrap { max-width:1000px; margin:0 auto; padding:0 clamp(18px,4vw,44px) 96px; }
+
+/* --- masthead --- */
+.eyebrow {
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:11.5px; font-weight:500;
+  letter-spacing:.13em; text-transform:uppercase; color:var(--accent); margin:0 0 14px;
+}
+h1 {
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif; font-weight:700;
+  font-size:clamp(2.1rem,5.4vw,3.5rem); line-height:1.01; letter-spacing:-.025em;
+  text-wrap:balance; margin:0 0 18px;
+}
+header.mast { padding:clamp(40px,7vw,76px) 0 26px; border-bottom:1px solid var(--hair-firm); margin-bottom:38px; }
+.standfirst { max-width:64ch; font-size:1.18rem; color:var(--ink-soft); margin:0 0 32px; }
+.standfirst b { color:var(--ink); font-weight:600; }
+
+.stats { display:flex; flex-wrap:wrap; border:1px solid var(--hair); border-radius:3px; background:var(--surface); overflow:hidden; }
+.stat { flex:1 1 140px; padding:15px 18px; border-right:1px solid var(--hair); }
+.stat:last-child { border-right:0; }
+.stat .n { font-family:Archivo,sans-serif; font-weight:700; font-size:1.7rem; line-height:1;
+           font-variant-numeric:tabular-nums; display:block; margin-bottom:5px; }
+.stat .l { font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.09em;
+           text-transform:uppercase; color:var(--muted); }
+.stat.a .n { color:var(--accent); } .stat.f .n { color:var(--fixed); } .stat.i .n { color:var(--input); }
+
+/* --- sections --- */
+section { margin:0 0 66px; scroll-margin-top:20px; }
+.shead { display:flex; align-items:baseline; gap:13px; margin-bottom:8px; }
+.shead .sn { font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600;
+             color:var(--accent); letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; padding-top:5px; }
+h2 { font-family:Archivo,sans-serif; font-weight:600; font-size:clamp(1.4rem,2.8vw,1.85rem);
+     letter-spacing:-.016em; line-height:1.14; margin:0; text-wrap:balance; }
+.sdek { color:var(--muted); font-size:1.02rem; max-width:62ch; margin:0 0 26px; font-style:italic; }
+h3 { font-family:Archivo,sans-serif; font-weight:600; font-size:1.08rem; letter-spacing:-.008em;
+     margin:30px 0 9px; line-height:1.3; text-wrap:balance; }
+p { max-width:68ch; color:var(--ink-soft); margin:0 0 13px; }
+p.wide { max-width:none; }
+ul, ol { max-width:68ch; color:var(--ink-soft); padding-left:22px; margin:0 0 14px; }
+li { margin-bottom:7px; }
+b, strong { color:var(--ink); font-weight:600; }
+em.q { font-style:italic; color:var(--ink); }
+code { font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.87em;
+       background:var(--sunken); padding:.1em .34em; border-radius:2px; color:var(--ink); }
+a { color:var(--accent); }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* --- callout --- */
+.call { border-left:3px solid var(--accent); background:var(--surface); padding:16px 20px;
+        margin:16px 0 20px; border-radius:0 3px 3px 0; box-shadow:var(--shadow); }
+.call.bad { border-left-color:var(--decide); }
+.call.good { border-left-color:var(--fixed); }
+.call .lab { font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:600;
+             letter-spacing:.09em; text-transform:uppercase; color:var(--accent); display:block; margin-bottom:7px; }
+.call.bad .lab { color:var(--decide); } .call.good .lab { color:var(--fixed); }
+.call p:last-child { margin-bottom:0; }
+
+/* --- tables --- */
+.tw { overflow-x:auto; margin:0 0 18px; border:1px solid var(--hair); border-radius:3px; }
+table { border-collapse:collapse; width:100%; font-family:"IBM Plex Mono",monospace;
+        font-size:12.5px; background:var(--surface); }
+th, td { text-align:left; padding:9px 13px; border-bottom:1px solid var(--hair); vertical-align:top; }
+thead th { font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted);
+           font-weight:600; background:var(--sunken); white-space:nowrap; }
+tbody tr:last-child td { border-bottom:0; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.ok { color:var(--fixed); } .no { color:var(--decide); }
+
+/* --- figures / charts --- */
+figure { margin:22px 0 26px; }
+figcaption { font-size:.94rem; color:var(--muted); margin-top:11px; max-width:68ch; }
+figcaption b { color:var(--ink-soft); }
+.ftitle { font-family:Archivo,sans-serif; font-weight:600; font-size:1rem; color:var(--ink);
+          margin-bottom:3px; letter-spacing:-.006em; }
+.fsub { font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.06em;
+        text-transform:uppercase; color:var(--muted); margin-bottom:14px; }
+.chart { position:relative; }
+.chart svg { display:block; width:100%; height:auto; overflow:visible; }
+.legend { display:flex; flex-wrap:wrap; gap:16px; margin:0 0 12px;
+          font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--ink-soft); }
+.legend span { display:inline-flex; align-items:center; gap:6px; }
+.swatch { width:11px; height:11px; border-radius:2px; display:inline-block; }
+.tip { position:absolute; pointer-events:none; opacity:0; transform:translate(-50%,-115%);
+       background:var(--ink); color:var(--bg); font-family:"IBM Plex Mono",monospace;
+       font-size:11px; padding:5px 9px; border-radius:3px; white-space:nowrap; z-index:5;
+       transition:opacity .09s linear; }
+.tip.on { opacity:1; }
+@media (prefers-reduced-motion:reduce) { .tip { transition:none; } }
+.axlab { font-family:"IBM Plex Mono",monospace; font-size:10.5px; fill:var(--muted); }
+.vlab { font-family:"IBM Plex Mono",monospace; font-size:11px; fill:var(--ink-soft);
+        font-variant-numeric:tabular-nums; }
+.clab { font-family:"IBM Plex Mono",monospace; font-size:11.5px; fill:var(--ink-soft); }
+.clab.hi { fill:var(--ink); font-weight:600; }
+
+/* --- action items --- */
+.act { border:1px solid var(--hair); border-left:3px solid var(--accent); background:var(--surface);
+       border-radius:0 3px 3px 0; padding:16px 20px; margin-bottom:13px; box-shadow:var(--shadow); }
+.act.you { border-left-color:var(--input); }
+.act.me  { border-left-color:var(--fixed); }
+.act .ah { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; margin-bottom:8px; }
+.act .who { font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:600;
+            letter-spacing:.08em; text-transform:uppercase; padding:3px 7px; border-radius:2px;
+            background:var(--accent-wash); color:var(--accent); white-space:nowrap; }
+.act.you .who { background:var(--input-wash); color:var(--input); }
+.act.me .who { background:var(--fixed-wash); color:var(--fixed); }
+.act h4 { font-family:Archivo,sans-serif; font-weight:600; font-size:1.02rem; margin:0;
+          flex:1 1 24ch; line-height:1.3; text-wrap:balance; }
+.act p { font-size:.98rem; margin-bottom:0; }
+.act .why { font-size:.94rem; color:var(--muted); margin-top:7px; }
+
+footer { border-top:1px solid var(--hair-firm); padding-top:20px; margin-top:20px;
+         font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--muted); line-height:1.75; }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">reasoning-terrain &middot; 31 aug &ndash; 3 sep 2026 &middot; branch feat/segment-and-open-issues &middot; rev 3, after adversarial review</p>
+  <h1>Three days on RT</h1>
+  <p class="standfirst">The model now runs inside the repo, four commands stopped lying, and everything
+    still open is on one page. And the pair of dates turns out to record something specific:
+    <b>67.9% of this village's structures are gone between them</b>, and the true figure is worse.
+    RT's own change detector said &ldquo;demolition&rdquo; and I argued it down; then I over-corrected
+    the other way and a reviewer took that apart too. Both corrections are on this page, because they
+    are the most useful thing on it.</p>
+  <div class="stats">
+    <div class="stat a"><span class="n">4</span><span class="l">commits</span></div>
+    <div class="stat"><span class="n">18</span><span class="l">files &middot; +2,364</span></div>
+    <div class="stat f"><span class="n">277</span><span class="l">tests, from 223</span></div>
+    <div class="stat i"><span class="n">30</span><span class="l">issues registered</span></div>
+    <div class="stat f"><span class="n">9</span><span class="l">decisions closed</span></div>
+    <div class="stat"><span class="n">&minus;67.9%</span><span class="l">structures lost</span></div>
+    <div class="stat"><span class="n">395</span><span class="l">Mpx segmented</span></div>
+  </div>
+</header>
+
+<!-- ================= 1 ================= -->
+<section id="segment">
+  <div class="shead"><span class="sn">day 1</span><h2>The model runs in the repo now</h2></div>
+  <p class="sdek">Everything in RT started from a label raster somebody else produced. <code>segmap segment</code> is the step before that.</p>
+
+  <p>RGB ortho in, single-band wire-id GeoTIFF out. The fixed models emit <b>one class index per
+    pixel</b>, not a class-probability stack &mdash; <code>preds</code> is int64 <code>(1, H, W)</code>
+    and the integer is a sparse product wire id in 0..241, the same id space RT already reads. So there
+    is no argmax to take and no channel bookkeeping to get wrong: <code>preds</code> goes to disk
+    verbatim and <code>loader</code> translates it exactly as it does a tile that arrived from the
+    product. <code>roads</code> and <code>dsem_landcover</code> come free in the same forward pass and
+    are dropped &mdash; nothing in RT consumes either.</p>
+
+  <h3>Three guards, because this failure mode is silent</h3>
+  <p>A segmenter run wrong does not crash. It returns a plausible map of ground that is not there, and
+    nothing downstream can detect it. So:</p>
+  <div class="tw"><table>
+    <thead><tr><th>guard</th><th>what it stops</th></tr></thead>
+    <tbody>
+      <tr><td>scale</td><td>one model per resolution, chosen from the raster's own m/px <b>by ratio</b> &mdash; 0.3 m is 2.4&times; the 12.5 cm model and 0.6&times; the 50 cm one, so the second is the less wrong. Warned past 5% off native, refused past 25%, and the warning prints <em class="q">before</em> the inference, not after 35 minutes of it.</td></tr>
+      <tr><td>seams</td><td><code>--tile 1024 --halo 128</code> feeds the network 1280&sup2; and keeps the middle 1024&sup2;. One fixed input shape for every tile, edge tiles included &mdash; so no tile boundary prints itself into the map.</td></tr>
+      <tr><td>8-bit</td><td>the producer's normalisation is <code>(v &minus; ImageNet mean) / std</code>, which means nothing on 16-bit imagery. Refused, not scaled on a guess.</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>The weights arrived named <code>ST_15cm_model.onnx</code>, which they are not: byte-identical
+    (md5 <code>88ba82f8&hellip;</code>) to the product's <code>Merged_2025-02-13&hellip;</code> release,
+    whose own registry calls it <code>RESOLUTION_12_5</code>. Renamed to
+    <code>ST_12_5cm_model.onnx</code>; <code>LEGACY_NAMES</code> keeps the old name resolving so
+    nobody else's <code>models/</code> directory breaks.</p>
+
+  <div class="call good">
+    <span class="lab">how it is tested</span>
+    <p><b>36 tests, driven by a stub session whose &ldquo;prediction&rdquo; is a known function of its
+      input</b> &mdash; so <code>segment_array(rgb)</code> must reproduce <code>rgb[...,0]</code>
+      exactly. That is what catches the four things which can actually go wrong here: a seam, an
+      overlap, an interior taken at the wrong offset, or the bands reversed. A real forward pass
+      catches none of them, because a plausible map of the <em class="q">wrong</em> ground looks
+      exactly like a plausible map. One test uses the real weights and asserts every id the model can
+      emit has a name in the bundled mapping; it skips when they are absent.</p>
+  </div>
+
+  <h3>What it costs</h3>
+  <div class="tw"><table>
+    <thead><tr><th>tile</th><th class="num">model input</th><th class="num">useful throughput</th><th class="num">peak RSS</th><th class="num">per 197 Mpx ortho</th></tr></thead>
+    <tbody>
+      <tr><td>1024 (default)</td><td class="num">1280&sup2;</td><td class="num">0.09 Mpx/s</td><td class="num">18 GB</td><td class="num">~35 min</td></tr>
+      <tr><td>2048</td><td class="num">2304&sup2;</td><td class="num">0.11 Mpx/s</td><td class="num">67 GB</td><td class="num">~29 min</td></tr>
+    </tbody>
+  </table></div>
+  <p>28 CPU cores. The tile size is the memory knob and the default is the one that fits a laptop.
+    <code>--gpu</code> asks for <code>CUDAExecutionProvider</code> and falls back with a warning &mdash;
+    the plain <code>onnxruntime</code> wheel has none, and this box has a Quadro RTX 6000 sitting idle.
+    <b>Both of your 197.4 Mpx orthos are segmented end to end</b>, and <code>segmap report</code> runs
+    on the output with no extra flags.</p>
+</section>
+
+<!-- ================= 2 ================= -->
+<section id="runrt">
+  <div class="shead"><span class="sn">day 1</span><h2>run-RT, and the bug it found in itself</h2></div>
+  <p class="sdek">Five steps against real code. Four passed; the fifth found two defects, one of them in the checklist.</p>
+  <div class="tw"><table>
+    <thead><tr><th>step</th><th>result</th><th>evidence</th></tr></thead>
+    <tbody>
+      <tr><td>1 &middot; baseline tests</td><td class="ok">PASS</td><td>257 passed, 0 failed</td></tr>
+      <tr><td>2 &middot; real pipeline run</td><td class="ok">PASS</td><td><code>out/demo-fixes/report/index.html</code>, no traceback</td></tr>
+      <tr><td>3 &middot; live playground job</td><td class="no">FAILED, then PASS</td><td><code>IndexError</code> at 96% on the first tile; <code>done / pct 100</code> on a tile with data</td></tr>
+      <tr><td>4 &middot; per-fix regressions</td><td class="ok">PASS</td><td>4/4 groups &mdash; 3, 10, 1, 7 tests</td></tr>
+      <tr><td>5 &middot; packaging install</td><td class="ok">PASS</td><td>bundled data resolves under <code>site-packages</code>, not the checkout</td></tr>
+    </tbody>
+  </table></div>
+  <div class="call bad">
+    <span class="lab">two defects from one command</span>
+    <p><b>The checklist's own step 0 picked the tile that breaks step 3.</b>
+      <code>ls data/incoming/leb/*.tif | head -1</code> lands on <code>x3307_y3673</code>, one of two
+      94%-nodata edge tiles whose centred 6 Mpx crop is <em class="q">100%</em> nodata &mdash; zero
+      valid pixels. Measured across all six leb tiles: the two <code>x3307_*</code> give
+      <b>0%</b> classified after the crop, the four others <b>50&ndash;56%</b>. So it failed on its
+      own first choice on every run.</p>
+    <p>And downstream of that, <code>s4_products.summarise</code> called
+      <code>np.percentile</code> on an empty selection &mdash; a real answer
+      (&ldquo;this window is entirely unclassified&rdquo;) arriving as an <code>IndexError</code>
+      three frames from the code that could have said so.</p>
+  </div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section id="register">
+  <div class="shead"><span class="sn">day 2</span><h2>Everything open, on one page</h2></div>
+  <p class="sdek">Not new information. It had never been in one place you could make a decision against.</p>
+
+  <p><code>open_issues.md</code> integrates HANDOFF &sect;8/&sect;9/&sect;12, README's next steps, the six
+    solution docs' open-questions sections, <code>handover.html</code>'s sixteen-defect adversarial
+    review, <code>five-fixes.html</code>'s &ldquo;found along the way&rdquo;,
+    <code>WEAKNESSES.md</code>'s 24 findings and four commit bodies. <b>Every item carries a mark:
+    re-verified on the day, or inherited with its source's date.</b> 14 of the load-bearing claims
+    were re-run rather than copied &mdash; which is how three of them turned out to be worth
+    re-stating, and one of my own turned out to be wrong.</p>
+
+  <figure>
+    <div class="ftitle">28 registered items, by what would move them</div>
+    <div class="fsub">reasoning-terrain &middot; open_issues.md &middot; 2 sep 2026</div>
+    <div class="chart" id="c-states"></div>
+    <figcaption>Only 7 are ordinary open defects. <b>6 cannot be closed by engineering at all</b> &mdash;
+      they need a DEM, a labelled set, a class owner, a geological map, an API key, or a model export.
+      That ratio is the single most useful thing the register showed.</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 4 ================= -->
+<section id="fixes">
+  <div class="shead"><span class="sn">day 3</span><h2>Four commands that lied</h2></div>
+  <p class="sdek">Each returned a wrong answer rather than failing &mdash; the failure mode this repo fears most. 16 tests pin them; 9 fail against the code as it was, and 3 are deliberate controls.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>what</th><th>the lie</th><th>now</th></tr></thead>
+    <tbody>
+      <tr><td><code>report --osm</code></td><td><code>report.py</code> contained <b>zero</b> references to <code>osm</code>. The flag parsed and stopped there, so every <code>Evidence.reference</code> was <code>None</code>, silently, and the page rendered identically with and without it.</td><td>one fetch over the union of layers the four sections need, handed to S1, S2 and the products; the page states which of the two cases it is in</td></tr>
+      <tr><td>all-nodata window</td><td><code>np.percentile</code> on an empty selection &rarr; <code>IndexError</code> at 96% of a job</td><td>a stated answer; three <code>Mean of empty slice</code> warnings gone with it</td></tr>
+      <tr><td>run-rt step 0</td><td>picked the tile that triggers the above, every run</td><td>ranks tiles by classified fraction <em class="q">after</em> the crop</td></tr>
+      <tr><td>mosaic path</td><td>raw wire ids passed through as dense ids; surfaced as <code>KeyError: np.int64(94)</code> from <code>digests.py</code>, three modules away. A <b>borrowed</b> class mapping (aza read with sinai's) was applied in total silence.</td><td><code>_check</code> naming the tile, and the borrowing announces itself</td></tr>
+    </tbody>
+  </table></div>
+
+  <figure>
+    <div class="ftitle">What <code>--osm</code> was worth, once it was wired</div>
+    <div class="fsub">data/incoming/leb &middot; 313 OSM ways burned &middot; trafficability, mean over classified pixels</div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--s-a)"></span>without overlay</span>
+      <span><span class="swatch" style="background:var(--s-b)"></span>with overlay</span>
+    </div>
+    <div class="chart" id="c-osm"></div>
+    <figcaption>8.64% of classified pixels moved. A mapped building goes to <b>0.00</b> &mdash; not
+      trafficable, which is the point of joining a second map &mdash; and mapped road surface rises to
+      <b>0.89</b>. None of this reached a report page before this week. The AOI mean barely budges
+      (0.620 &rarr; 0.617), which is exactly why an aggregate could not have revealed the bug.</figcaption>
+  </figure>
+
+  <div class="call">
+    <span class="lab">the decision that was not to fix anything</span>
+    <p><code>class_distance</code> returns exactly <b>1.0</b> for all <b>1,592</b> cross-superclass
+      ordered pairs, and <b>91.0%</b> of all 2,162 ordered pairs clear the 0.70 <code>isolated-speck</code>
+      threshold. So the &ldquo;semantically distant host&rdquo; filter admits nearly everything and the
+      strangeness term it feeds into severity is a near-constant. Your call was to leave the distance
+      alone and make S1 <em class="q">say so</em> &mdash; and it now does, in numbers it enumerates from
+      the taxonomy at call time so they cannot drift from it, naming the fix that is
+      <b>not</b> allowed: adding a prior is what <code>RETIRED_PRIORS</code> exists to remember the cost
+      of. Verified in real output: the caveat prints above the sinai worklist's 178 root causes.</p>
+  </div>
+</section>
+
+<!-- ================= 5 ================= -->
+<section id="dates">
+  <div class="shead"><span class="sn">the result</span><h2>What the two dates record</h2></div>
+  <p class="sdek">33.107&nbsp;N, 35.239&nbsp;E &mdash; southern Lebanon, 2.113 &times; 1.024 km, 216.5 ha. Per the project owner the interval between the two acquisitions contains the Israel&ndash;Lebanon war, and buildings on this ground were destroyed.</p>
+
+  <div class="call">
+    <span class="lab">a unit warning that applies to every figure below</span>
+    <p>The rasters are <b>EPSG:3857</b>, whose unit is a pseudo-metre: at 33.1&nbsp;N one unit is
+      <code>cos(&phi;)</code> = <b>0.838</b> true ground metres. RT takes the header at face value, so
+      every area it prints on this AOI is <b>42.5% too large</b> &mdash; it calls this ground 308.5 ha
+      when it is 216.5. <b>Every hectare on this page is true ground</b>, converted. The defect itself
+      is register item 2.13, found by the review below.</p>
+  </div>
+
+  <h3>The structures</h3>
+  <figure>
+    <div class="ftitle">Built-class area, 2022 &rarr; 2025</div>
+    <div class="fsub">true ground hectares &middot; 216.5 ha mapped</div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--s-a)"></span>2022-10-29</span>
+      <span><span class="swatch" style="background:var(--s-b)"></span>2025-06-06</span>
+    </div>
+    <div class="chart" id="c-built"></div>
+    <figcaption><b>House, BrickWall and Pavement: 12.19 &rarr; 3.91 ha, a loss of 67.9%.</b>
+      <code>PavedRoad</code> is shown but <b>excluded from that total</b> &mdash; 53.0% of it became
+      <code>DirtRoad</code> and only 3.0% became <code>Clutter</code>, on a road network whose
+      superclass share is conserved (+0.10 pt). That is a surface relabel, not destruction, and it was
+      39% of the &ldquo;built collapse&rdquo; I first quoted. <b>&dagger;</b> marks it as excluded.</figcaption>
+  </figure>
+
+  <h3>And the rubble is where the buildings were</h3>
+  <figure>
+    <div class="ftitle">Where 2025's new <code>Clutter</code> came from</div>
+    <div class="fsub">true ground hectares &middot; Clutter grew 1.01 &rarr; 11.77 ha, a factor of 11.6</div>
+    <div class="chart" id="c-clutter"></div>
+    <figcaption><code>House</code> is the largest single source: <b>3.39 ha, 29.4% of the 11.50 ha of
+      new Clutter</b>. But <b><code>Shadow</code> at 16.7% is not change at all</b> &mdash; it is
+      ground never observed in 2022, revealed when the sun went from an October low to a June high
+      (Shadow falls 78% between the dates). <code>Rendzina</code> and <code>Maquis</code> add 23%
+      more that is ordinary class churn.</figcaption>
+  </figure>
+
+  <div class="call bad">
+    <span class="lab">the damage inventory, and why it is a floor</span>
+    <p><code>House &rarr; Clutter</code> covers <b>3.39 ha over 2,579 components</b>, of which
+      <b>220 clear a 20 m&sup2; floor and hold 91% of the area</b>. My first instinct was that 220
+      undercounts because one building fragments into several patches. <b>Wrong</b> &mdash; the
+      reviewer measured <b>1.09 patches per building</b>.</p>
+    <p>It undercounts for two worse reasons. Burning the cached OSM snapshot gives <b>2.08 mapped
+      buildings per <code>House</code> component</b> &mdash; adjacent buildings share walls and merge
+      under 8-connectivity. And of a random 12 OSM buildings this metric scores as <em class="q">
+      undamaged</em>, <b>12 were destroyed in the imagery</b>: 20% of building footprints read as
+      bedrock in 2025, not as Clutter. <b>220 is low by roughly 2&ndash;4&times;</b>, and the
+      defensible statement is that essentially the whole building stock here is destroyed or heavily
+      damaged.</p>
+  </div>
+
+  <h3>Most of the change is not destruction</h3>
+  <figure>
+    <div class="ftitle">Change in each superclass's share of the map, 2022 &rarr; 2025</div>
+    <div class="fsub">percentage points &middot; both dates 100% classified</div>
+    <div class="chart" id="c-delta"></div>
+    <figcaption>Soil <b>&minus;25.6 points</b>, vegetation <b>+40.6</b>, agriculture <b>&minus;11.8</b>
+      &mdash; late October is bare ground at the end of the dry season, early June is standing dried
+      biomass, and abandoned cultivation sits on top of that. <b>built is only &minus;3.8</b>, which is
+      why the destruction is invisible here and unmistakable in the chart above.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="ftitle">The same story per class</div>
+    <div class="fsub">share of classified pixels &middot; twelve classes &middot; full extent</div>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--s-a)"></span>2022-10-29</span>
+      <span><span class="swatch" style="background:var(--s-b)"></span>2025-06-06</span>
+    </div>
+    <div class="chart" id="c-classes"></div>
+    <figcaption>Two different events in one picture. <code>Rendzina</code> 29.7% &rarr; 7.5% and
+      <code>DryGrassland</code> 8.8% &rarr; 31.9% is season and abandonment. <code>House</code> 3.4%
+      &rarr; 1.0% and <code>Clutter</code> 0.5% &rarr; 5.4% is the war.</figcaption>
+  </figure>
+
+  <h3>RT said so, and I argued it down</h3>
+  <figure>
+    <div class="ftitle">How S6 categorised the difference</div>
+    <div class="fsub">share of the 84.1% differing area, by adjudicated category</div>
+    <div class="chart" id="c-s6"></div>
+    <figcaption><b><code>demolition</code> and <code>infrastructure</code></b> &mdash;
+      <code>House &rarr; Clutter</code> and <code>PavedRoad &rarr; DirtRoad</code>. The repo's own
+      categoriser reached those without being told anything about a war, and I discounted them as
+      artefacts of an incomparable pair.</figcaption>
+  </figure>
+</section>
+
+<!-- ================= 6 ================= -->
+<section id="wrong">
+  <div class="shead"><span class="sn">correction</span><h2>Three things I reported wrongly</h2></div>
+  <p class="sdek">Two of them on the same finding, in opposite directions. They belong on this page for the same reason the rest of it does.</p>
+
+  <h3>1 &middot; &ldquo;These are two mappings, not two dates&rdquo;</h3>
+  <p>I ran three discriminators and concluded the pair could not be compared. The null test was sound
+    (<code>compare(A, A)</code> &rarr; <code>changed_frac 0.000000%</code>) and the arithmetic was
+    right. The verdict rested on a premise stated as if it were a law:
+    <em class="q">&ldquo;buildings do not vanish and asphalt does not become dirt.&rdquo;</em> In an
+    area that was shelled they do.</p>
+  <div class="call bad">
+    <span class="lab">why this one stings</span>
+    <p>It is the same shape as the soil-genesis priors this repo retired &mdash; reasonable-sounding
+      world knowledge, wired into scoring code, wrong here. They cost <b>10,788 false findings</b> and
+      stayed invisible until someone read the worklist. <code>taxonomy.RETIRED_PRIORS</code> exists to
+      remember that, and I made the same class of mistake in the same week, inside a document whose
+      subject is that mistake.</p>
+  </div>
+  <p>The fix I proposed for it was worse than nothing: register 2.12 said <code>s6_change</code> should
+    <b>refuse</b> a pair whose built-class retention is implausible. That gate would have refused this
+    pair. <b>A comparability check keyed on the built environment suppresses exactly the change it is
+    most important to detect.</b></p>
+
+  <h3>2 &middot; Then I over-corrected, and a reviewer took that apart too</h3>
+  <p>Handed the war, I asserted the label data <em class="q">rules out</em> the segmenter. It does not.
+    I put a fresh-context reviewer on the corrected claims with instructions to refute; it reproduced
+    every arithmetic figure to the digit and then dismantled the reasoning by running it:</p>
+  <div class="tw"><table>
+    <thead><tr><th>my discriminator</th><th>what the reviewer found</th></tr></thead>
+    <tbody>
+      <tr><td>House retention is implausibly low at 18.2%</td><td>that is <b>above the scene median</b>. 84.1% of all pixels changed label and 62.5% changed superclass. Batha 46.4, DryGrassland 40.3, DirtRoad 33.4, <b>House 18.2</b>, Maquis 4.3, IrrigatedOrchard 0.0</td></tr>
+      <tr><td>a −71% collapse is extraordinary</td><td>it is the <b>9th-largest decline</b> among classes over 1 ha. <code>IrrigatedOrchard</code> went <b>−100.0%</b>, and nobody destroyed the irrigated orchards</td></tr>
+      <tr><td>damage is bimodal per building &mdash; a building is flattened or it is not</td><td>true, and <b>the identical U-shape appears on <code>PavedRoad&nbsp;&rarr;&nbsp;DirtRoad</code></b>, where the network is provably intact. Bimodality is what a per-object relabel looks like</td></tr>
+      <tr><td>damage is spatially clustered</td><td>so is every relabel this segmenter makes &mdash; roads at p = 0.023, vegetation at p &lt; 0.0001</td></tr>
+      <tr><td>a flattened building stops casting a shadow</td><td>sound, and <b>null here</b>: at 33 N in June the sun is near zenith and shadow around buildings is at background level for destroyed and intact alike, p = 0.64</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>What actually settles it is the imagery</b> &mdash; which the reviewer opened and I did not.
+    The village is levelled. The honest formulation is <em class="q">&ldquo;the label rasters are
+    consistent with destruction and the source orthos confirm it&rdquo;</em>, never <em class="q">
+    &ldquo;the labels rule out the alternative&rdquo;</em>. The conclusion was right; the argument
+    never reached it.</p>
+
+  <h3>3 &middot; A unit error running through every area figure</h3>
+  <p>The same review found that <code>loader.geotiff_gsd</code> converts degrees to metres for a
+    geographic CRS &mdash; that fix is in the code, with a comment explaining that face value would be
+    catastrophic &mdash; but does not apply the Web-Mercator scale factor. So on any EPSG:3857 raster
+    every area RT reports is inflated by <code>1/cos&sup2;(&phi;)</code>: <b>42.5% at this latitude</b>.
+    I documented that exact trap in <code>segment.py</code>'s own docstring and then quoted
+    pseudo-hectares as hectares in a damage assessment. Register 2.13; the fix is four lines and
+    changes every area the repo has ever produced on 3857 input, so it is an owner call.</p>
+
+  <h3>4 &middot; And the smaller one from yesterday</h3>
+  <p>I said HANDOFF (26,592 sinai findings) and <code>S1-audit.md</code> (41,669) disagreed. Re-ran it:
+    <b>133,976 regions, 178 root causes, 26,592 findings</b> &mdash; HANDOFF's figures exactly.
+    <code>S1-audit.md</code>'s table has <em class="q">two</em> count columns, before and after the
+    roll-up; 41,669 is the before-column. Nothing disagreed. The rebuild cost <b>5 min 06 s</b>, not
+    the ~24 min I used as my reason to skip it.</p>
+</section>
+
+<!-- ================= 7 ================= -->
+<section id="actions">
+  <div class="shead"><span class="sn">next</span><h2>Action items</h2></div>
+  <p class="sdek">Reordered after the correction. The label says whose move it is.</p>
+
+  <div class="act you">
+    <div class="ah"><span class="who">you</span><h4>Decide whether damage assessment is the product</h4></div>
+    <p>For this AOI it is the question, and RT already computes most of the answer: 67.9% structure
+      loss and a rubble layer <code>s6_change</code> already labels <code>demolition</code>. The
+      review showed the missing piece is not optional &mdash; <b>the pixel metric misses most of the
+      damage</b>: 12 of 12 buildings it scored as undamaged were destroyed, because 20% of footprints
+      read as bedrock rather than <code>Clutter</code>. Joining OSM footprints is what turns a
+      pixel transition into a per-building status, and what makes the number honest.</p>
+    <p class="why">This reframes S4's Q6 as well: the three products to build may not be
+      trafficability and concealment at all.</p>
+  </div>
+
+  <div class="act you">
+    <div class="ah"><span class="who">you / class owner</span><h4>Is damage a class, a state, or a layer? (register 1.8)</h4></div>
+    <p>The most consequential signal in this pair is riding on <code>Clutter</code> &mdash; a class the
+      taxonomy defines as out-of-vocabulary debris and <code>s1_audit</code> reports as
+      <em class="q">&ldquo;detector targets&rdquo;</em>. Consequences are already visible:
+      <code>class_distance("House","Clutter")</code> is a maximal 1.0, so a destroyed building scores
+      as maximally strange; and <code>s2_adjudicate</code> will consider switching a rubble region back
+      to <code>House</code> on geometry.</p>
+    <p class="why">A separate damage layer is probably right, and it is the one thing the current
+      schema cannot express.</p>
+  </div>
+
+  <div class="act you">
+    <div class="ah"><span class="who">you</span><h4>Answer Q5 &mdash; a soft-pred export of the 12.5 cm and 50 cm models</h4></div>
+    <p>S2 names the segmenter's own confidence as its <b>highest-value missing input</b>, and
+      <code>preds</code> arg-maxes it away inside the graph. The sibling Dynamic-Terrain drop has 45-
+      and 48-channel <code>soft_preds</code> models, so the export path exists &mdash; just not for
+      these two resolutions. It matters more now: a low-confidence <code>House</code> pixel next to
+      rubble is a different claim from a confident one.</p>
+    <p class="why">Unblocks S2, and would let a damage product report uncertainty instead of a hard edge.</p>
+  </div>
+
+  <div class="act me">
+    <div class="ah"><span class="who">me, next</span><h4>Georeference the answers</h4></div>
+    <p>Your Q7 answer, and it just got more urgent. Every result is pixel <code>cy</code>/<code>cx</code>
+      plus a region id. A damage inventory that cannot be handed to anyone as coordinates is not an
+      inventory. Add lat/lon to every result and a GeoJSON export.</p>
+    <p class="why">220 damage patches with no coordinates are a number; with coordinates they are a
+      worklist someone can walk.</p>
+  </div>
+
+  <div class="act">
+    <div class="ah"><span class="who">either</span><h4>The model version per acquisition &mdash; still worth having, no longer urgent</h4></div>
+    <p>Rock classes retain 6&ndash;11% and <code>Water</code> 9.2% across the pair, which neither the
+      war nor the season explains. Those classes hold ~1 ha of 308, so it is probably small-class
+      boundary noise &mdash; but a retrained segmenter would explain it too, and one field of metadata
+      settles it.</p>
+    <p class="why">Demoted from first to fifth by the correction. It was the whole story; now it is a
+      loose end.</p>
+  </div>
+
+  <div class="act">
+    <div class="ah"><span class="who">either</span><h4>Wire the DEM</h4></div>
+    <p>Your Q1 answer, still unstarted. One 29 MB Copernicus GLO-30 tile, no auth, covers all three
+      AOIs. Unblocks 23 lithology&times;morphology classes, S1's slope and aspect priors, S2's
+      morphology term, S5's slope filter, and the corridor verb that currently calls
+      <b>93.9%</b> of the sinai mosaic reachable because every slope is 0.0.</p>
+    <p class="why">Still the best value per hour on any list in this repo.</p>
+  </div>
+
+  <div class="act you">
+    <div class="ah"><span class="who">you</span><h4>Fix the Web-Mercator area factor, or decide not to (register 2.13)</h4></div>
+    <p>Four lines in <code>loader.geotiff_gsd</code> &mdash; multiply by <code>cos(lat)</code> when the
+      CRS is Web Mercator. It makes every area on a 3857 raster correct, makes every area the repo has
+      previously printed on one wrong by comparison, and invalidates the cached indices keyed on GSD.</p>
+    <p class="why">Doing nothing is defensible, but then the convention has to be stated wherever a
+      number is quoted &mdash; and today it is not.</p>
+  </div>
+
+  <div class="act you">
+    <div class="ah"><span class="who">you</span><h4>Merge or send back the branch</h4></div>
+    <p>Four commits on <code>feat/segment-and-open-issues</code>, pushed. Open the PR from the link in
+      my message &mdash; <code>gh</code> is not installed on this machine, so I could not do it for you.</p>
+    <p class="why">277 passed, 1 skipped; <code>ruff check</code> clean on every file touched.</p>
+  </div>
+</section>
+
+<!-- ================= 8 ================= -->
+<section id="future">
+  <div class="shead"><span class="sn">beyond</span><h2>Future work, and what I would not do</h2></div>
+  <p class="sdek">Recommendations with the reasoning attached, so they can be argued with rather than accepted. The first two changed this morning.</p>
+
+  <h3>Worth doing, in this order</h3>
+  <ol>
+    <li><b>Build the damage product.</b> The pieces exist: <code>segmap segment</code> makes the
+      rasters, <code>s6_change</code> finds and categorises the transitions, the OSM layer has building
+      footprints for this ground, and <code>tilemap</code> renders per-tile results. What is missing is
+      the join &mdash; footprint-level status rather than pixel-level transition &mdash; and honest
+      uncertainty on it. This is the highest-value unbuilt thing in the repo for this AOI, and none of
+      it is research.</li>
+    <li><b>Make assumptions in checks declare themselves.</b> The failure this week was not a bug; it
+      was a world-model premise (&ldquo;buildings do not vanish&rdquo;) inside a test, unlabelled.
+      <code>taxonomy.RETIRED_PRIORS</code> already does this for scoring priors: name the assumption,
+      name what would falsify it, keep the record when it is retired. Discriminators deserve the same
+      treatment, and there is now a worked example to point at.</li>
+    <li><b>Log the producer's model version into the raster.</b> <code>segmap segment</code> already
+      writes <code>ST_MODEL</code> and <code>ST_MODEL_NATIVE_GSD</code>, which is why this week's
+      rasters are self-describing and the source orthos are not. Ask the product to stamp the same
+      thing and S6's open question 2 becomes answerable from the file.</li>
+    <li><b>Take the free outputs seriously.</b> <code>roads</code> is a binary mask from the same
+      forward pass and an <em class="q">independent</em> opinion about the same ground as the OSM road
+      layer &mdash; the one input S1's reference checks have no second source for. On this AOI it is
+      also a damage signal: a road the model no longer sees is a road under rubble.</li>
+    <li><b>Put a GPU behind <code>segment</code>.</b> 35 CPU-minutes per ortho is tolerable once and
+      obstructive as a habit, and there is an idle RTX 6000 in the machine. It needs
+      <code>onnxruntime-gpu</code> and a CUDA runtime, not code &mdash; the provider fallback is
+      already written.</li>
+    <li><b>Then the region-unit problem.</b> The sinai mosaic's largest region is one
+      <code>Rendzina</code> component of 86.23 km&sup2; with 51,810 neighbours, while the median region
+      is 26 m&sup2;. It also bites here: 2,579 <code>House &rarr; Clutter</code> components collapse to
+      220 that matter, and the review measured <b>2.08 real buildings per component</b> &mdash; walls
+      shared, components merged. Largest and least contained item in the register, which is why it is
+      last.</li>
+  </ol>
+
+  <h3>What I would not do</h3>
+  <ul>
+    <li><b>Do not add the comparability gate as I first specified it.</b> Keyed on built-class
+      retention it would have refused this pair, which is the one that matters. If a gate goes in, it
+      keys on pipeline metadata, never on the scene.</li>
+    <li><b>Do not fix <code>class_distance</code> by adding a prior.</b> It is the exact mistake that
+      produced <code>RETIRED_PRIORS</code>, at a cost of 10,788 false findings. It needs a measured
+      confusion matrix or a compatibility relation from the class owner &mdash; and note that on this
+      AOI the taxonomy's own distances actively mislead:
+      <code>House &rarr; Clutter</code> scores as maximally strange when it is the expected outcome.</li>
+    <li><b>Do not tune S4's constants before its output contract is decided</b> &mdash; and reopen the
+      question of <em class="q">which</em> products, now that damage is on the table.</li>
+    <li><b>Do not spend an API key on S5 yet.</b> The eval harness formats the headline scalar with
+      <code>:,g</code>, so the model sees <code>203,551</code> where the stored truth is
+      <code>203,550.80</code>. Any model printing the exact figure cannot have got it from a tool
+      &mdash; the harness awards full marks for the fabrication it exists to catch.</li>
+    <li><b>Do not read aza numbers as findings</b> until its class mapping is confirmed. That AOI is
+      also a conflict zone, so the same <code>Clutter</code>-as-rubble question applies there, on top
+      of a mapping borrowed from another export.</li>
+  </ul>
+</section>
+
+<footer>
+  reasoning-terrain &middot; 31 August &ndash; 2 September 2026 &middot; branch
+  <span style="font-weight:600">feat/segment-and-open-issues</span>, 4 commits, 18 files, +2,364/&minus;23 &middot;
+  277 passed, 1 skipped &middot; every figure on this page is output from a command in the repo, not a
+  claim: <span style="white-space:nowrap">out/summary/discriminators.log</span>,
+  <span style="white-space:nowrap">out/summary/s6-full.log</span>,
+  <span style="white-space:nowrap">out/summary/s1-sinai.log</span>,
+  <span style="white-space:nowrap">out/summary/full-histograms.json</span>,
+  <span style="white-space:nowrap">out/summary/war-damage.log</span>,
+  <span style="white-space:nowrap">out/summary/war-damage-v2.log</span>. Areas are true ground metres;
+  the repo prints Web-Mercator pseudo-metres (register 2.13). Conclusions were put to a
+  fresh-context adversarial reviewer, which reproduced every arithmetic claim and refuted two
+  arguments &mdash; both refutations are in the corrections section. Chart palette validated
+  with the dataviz six-checks script on both grounds &mdash; the semantically obvious soil/vegetation
+  pairing failed CVD separation at deutan &Delta;E 3.3 and was replaced.
+</footer>
+
+</div>
+
+<script>
+/* ---------------------------------------------------------------------------
+   One small renderer for four bar forms. Every number below came from a
+   command in the repo; the source file for each is named in the footer.
+   --------------------------------------------------------------------------- */
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a = {}) => { const e = document.createElementNS(NS, n);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+function tipFor(host) {
+  const t = document.createElement("div");
+  t.className = "tip"; host.appendChild(t);
+  return {
+    show(x, y, html) { t.innerHTML = html; t.style.left = x + "px"; t.style.top = y + "px"; t.classList.add("on"); },
+    hide() { t.classList.remove("on"); }
+  };
+}
+function hover(host, node, tip, text) {
+  const on = (ev) => {
+    const hb = host.getBoundingClientRect(), b = node.getBoundingClientRect();
+    tip.show(b.left - hb.left + b.width / 2, b.top - hb.top, text);
+  };
+  node.addEventListener("mouseenter", on);
+  node.addEventListener("mousemove", on);
+  node.addEventListener("mouseleave", () => tip.hide());
+  node.setAttribute("tabindex", "0");
+  node.addEventListener("focus", on);
+  node.addEventListener("blur", () => tip.hide());
+}
+
+/* --- horizontal bars, one hue, optional highlight + reference line -------- */
+function hbar(id, rows, opts = {}) {
+  const host = document.getElementById(id);
+  const W = 720, rowH = opts.rowH || 30, padL = opts.padL || 168, padR = 62,
+        padT = opts.ref != null ? 18 : 4;
+  const H = padT + rows.length * rowH + 26;
+  const max = opts.max ?? Math.max(...rows.map(r => r.v));
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+    "aria-label": opts.label || "bar chart" });
+  const x = v => padL + (W - padL - padR) * (v / max);
+  const tip = tipFor(host);
+
+  [0, .25, .5, .75, 1].forEach(f => {
+    svg.appendChild(el("line", { x1: x(max * f), x2: x(max * f), y1: padT,
+      y2: padT + rows.length * rowH, stroke: "var(--grid)", "stroke-width": 1 }));
+    const t = el("text", { x: x(max * f), y: H - 8, class: "axlab", "text-anchor": "middle" });
+    t.textContent = opts.fmtAxis ? opts.fmtAxis(max * f) : (max * f).toFixed(0);
+    svg.appendChild(t);
+  });
+
+  rows.forEach((r, i) => {
+    const y = padT + i * rowH, h = rowH - 11;
+    const lab = el("text", { x: padL - 12, y: y + h / 2 + 4, "text-anchor": "end",
+      class: "clab" + (r.hi ? " hi" : "") });
+    lab.textContent = r.k;
+    svg.appendChild(lab);
+    const w = Math.max(x(r.v) - padL, r.v > 0 ? 2 : 0);
+    const bar = el("rect", { x: padL, y, width: w, height: h, rx: 4,
+      fill: r.hi ? "var(--bar)" : (opts.mute ? "var(--bar-mute)" : "var(--bar)") });
+    svg.appendChild(bar);
+    hover(host, bar, tip, r.tip || `${r.k}: ${r.v}`);
+    const v = el("text", { x: padL + w + 8, y: y + h / 2 + 4, class: "vlab" });
+    v.textContent = opts.fmt ? opts.fmt(r.v) : r.v;
+    svg.appendChild(v);
+  });
+
+  if (opts.ref != null) {
+    svg.appendChild(el("line", { x1: x(opts.ref), x2: x(opts.ref), y1: padT - 2,
+      y2: padT + rows.length * rowH, stroke: "var(--ink-soft)", "stroke-width": 2,
+      "stroke-dasharray": "4 4", "stroke-linecap": "round" }));
+    const t = el("text", { x: x(opts.ref), y: padT - 7, class: "axlab", "text-anchor": "end" });
+    t.textContent = opts.refLabel || "";
+    svg.appendChild(t);
+  }
+  host.appendChild(svg);
+}
+
+/* --- diverging bars: lost share vs gained share --------------------------- */
+function diverge(id, rows) {
+  const host = document.getElementById(id);
+  const W = 720, rowH = 34, padL = 124, padR = 30, padT = 6;
+  const H = padT + rows.length * rowH + 26;
+  const lo = Math.min(...rows.map(r => r.v)), hi = Math.max(...rows.map(r => r.v));
+  const zone = W - padL - padR, zero = padL + zone * (Math.abs(lo) / (Math.abs(lo) + hi));
+  const x = v => zero + (v >= 0 ? (zone * (hi / (Math.abs(lo) + hi))) * (v / hi)
+                                : (zone * (Math.abs(lo) / (Math.abs(lo) + hi))) * (v / Math.abs(lo)));
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+    "aria-label": "change in each superclass share, percentage points" });
+  const tip = tipFor(host);
+
+  svg.appendChild(el("line", { x1: zero, x2: zero, y1: padT, y2: padT + rows.length * rowH,
+    stroke: "var(--hair-firm)", "stroke-width": 1.5 }));
+
+  rows.forEach((r, i) => {
+    const y = padT + i * rowH, h = rowH - 13, xv = x(r.v);
+    const lab = el("text", { x: padL - 14, y: y + h / 2 + 4, "text-anchor": "end", class: "clab" });
+    lab.textContent = r.k;
+    svg.appendChild(lab);
+    const w = Math.max(Math.abs(xv - zero), 2);
+    const bar = el("rect", { x: Math.min(zero, xv), y, width: w,
+      height: h, rx: 4, fill: r.v >= 0 ? "var(--pos)" : "var(--neg)" });
+    svg.appendChild(bar);
+    hover(host, bar, tip, `${r.k}: ${r.a}% &rarr; ${r.b}% (${r.v > 0 ? "+" : ""}${r.v} pt)`);
+    // Inside the bar once there is room for it: outside, a full-width bar puts
+    // this label either on top of the category label or off the frame.
+    const inside = w > 62;
+    const t = el("text", {
+      x: r.v >= 0 ? (inside ? xv - 9 : xv + 8) : (inside ? xv + 9 : xv - 8),
+      y: y + h / 2 + 4, class: "vlab",
+      "text-anchor": r.v >= 0 ? (inside ? "end" : "start") : (inside ? "start" : "end"),
+      ...(inside ? { fill: "var(--surface)" } : {}) });
+    t.textContent = (r.v > 0 ? "+" : "") + r.v.toFixed(1) + " pt";
+    svg.appendChild(t);
+  });
+  const z = el("text", { x: zero, y: H - 8, class: "axlab", "text-anchor": "middle" });
+  z.textContent = "no change";
+  svg.appendChild(z);
+  host.appendChild(svg);
+}
+
+/* --- grouped bars, two series --------------------------------------------- */
+function grouped(id, keys, a, b, names, opts = {}) {
+  const host = document.getElementById(id);
+  const W = 720, rowH = 36, padL = 168, padR = 106, padT = 4;
+  const H = padT + keys.length * rowH + 26;
+  const max = Math.max(...a, ...b);
+  const x = v => padL + (W - padL - padR) * (v / max);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+    "aria-label": "share of classified pixels per class, two dates" });
+  const tip = tipFor(host);
+
+  [0, .25, .5, .75, 1].forEach(f => {
+    svg.appendChild(el("line", { x1: x(max * f), x2: x(max * f), y1: padT,
+      y2: padT + keys.length * rowH, stroke: "var(--grid)", "stroke-width": 1 }));
+    const t = el("text", { x: x(max * f), y: H - 8, class: "axlab", "text-anchor": "middle" });
+    t.textContent = opts.fmtAxis ? opts.fmtAxis(max * f) : (max * f).toFixed(0) + "%";
+    svg.appendChild(t);
+  });
+
+  keys.forEach((k, i) => {
+    const y = padT + i * rowH, h = 11;   /* 2px surface gap between the pair */
+    const lab = el("text", { x: padL - 12, y: y + rowH / 2 + 1, "text-anchor": "end", class: "clab" });
+    lab.textContent = k;
+    svg.appendChild(lab);
+    [[a[i], "var(--s-a)", names[0], y + 2], [b[i], "var(--s-b)", names[1], y + 2 + h + 2]]
+      .forEach(([v, fill, nm, yy]) => {
+        const w = Math.max(x(v) - padL, v > 0 ? 2 : 0);
+        const bar = el("rect", { x: padL, y: yy, width: w, height: h, rx: 4, fill });
+        svg.appendChild(bar);
+        hover(host, bar, tip, `${k} &middot; ${nm}: ${v.toFixed(2)}%`);
+      });
+    const t = el("text", { x: W - 2, y: y + rowH / 2 + 1, class: "vlab", "text-anchor": "end" });
+    t.textContent = a[i].toFixed(1) + " → " + b[i].toFixed(1) + (opts.unit || "");
+    svg.appendChild(t);
+  });
+  host.appendChild(svg);
+}
+
+/* --- dumbbell: before / after on one scale -------------------------------- */
+function dumbbell(id, rows) {
+  const host = document.getElementById(id);
+  const W = 720, rowH = 42, padL = 150, padR = 112, padT = 8;
+  const H = padT + rows.length * rowH + 26;
+  const max = 1;
+  const x = v => padL + (W - padL - padR) * (v / max);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
+    "aria-label": "trafficability with and without the OSM overlay" });
+  const tip = tipFor(host);
+
+  [0, .25, .5, .75, 1].forEach(f => {
+    svg.appendChild(el("line", { x1: x(f), x2: x(f), y1: padT, y2: padT + rows.length * rowH,
+      stroke: "var(--grid)", "stroke-width": 1 }));
+    const t = el("text", { x: x(f), y: H - 8, class: "axlab", "text-anchor": "middle" });
+    t.textContent = f.toFixed(2);
+    svg.appendChild(t);
+  });
+
+  rows.forEach((r, i) => {
+    const y = padT + i * rowH + rowH / 2 - 4;
+    const lab = el("text", { x: padL - 12, y: y + 4, "text-anchor": "end", class: "clab" });
+    lab.textContent = r.k;
+    svg.appendChild(lab);
+    svg.appendChild(el("line", { x1: x(r.a), x2: x(r.b), y1: y, y2: y,
+      stroke: "var(--hair-firm)", "stroke-width": 2, "stroke-linecap": "round" }));
+    [[r.a, "var(--s-a)", "without overlay"], [r.b, "var(--s-b)", "with overlay"]]
+      .forEach(([v, fill, nm]) => {
+        const c = el("circle", { cx: x(v), cy: y, r: 6, fill,
+          stroke: "var(--surface)", "stroke-width": 2 });
+        svg.appendChild(c);
+        hover(host, c, tip, `${r.k} &middot; ${nm}: ${v.toFixed(2)}`);
+      });
+    const t = el("text", { x: W - 2, y: y + 4, class: "vlab", "text-anchor": "end" });
+    const dp = r.dp || 2;
+    t.textContent = r.a.toFixed(dp) + " → " + r.b.toFixed(dp);
+    svg.appendChild(t);
+    const s = el("text", { x: padL - 12, y: y + 19, "text-anchor": "end", class: "axlab" });
+    s.textContent = r.sub;
+    svg.appendChild(s);
+  });
+  host.appendChild(svg);
+}
+
+/* ============================ the data ============================ */
+
+/* open_issues.md, 28 items */
+hbar("c-states", [
+  { k: "closed this week",      v: 7, hi: true, tip: "1.3 code half, 2.1, 2.2, 2.3, 2.4 stated, 2.11, 5.1 renamed" },
+  { k: "blocked on an input",   v: 7, tip: "1.1 DEM, 1.2 reviewed regions, 1.4 class notes, 1.5 geological map, 1.6 API key, 1.8 damage class, 5.4 soft-pred export" },
+  { k: "open defects",          v: 7, tip: "2.5, 2.6, 2.7, 2.8, 2.9, 2.10, 2.13 — ordinary engineering" },
+  { k: "informational",         v: 4, tip: "1.7, 5.3, 5.5, 5.6 — measured or by design, nothing to close" },
+  { k: "scale walls",           v: 3, tip: "3.1 token cost, 3.2 the region unit, 3.3 count counts blobs" },
+  { k: "conclusions corrected", v: 2, tip: "5.2 the two-mappings verdict, 2.12 the gate that would have suppressed it" },
+], { max: 8, mute: true, rowH: 34, padL: 190, fmt: v => v, fmtAxis: v => v.toFixed(0),
+     label: "registered items by state" });
+
+/* out/fixed/report-osm — s4_products.osm_delta */
+dumbbell("c-osm", [
+  { k: "mapped road",       sub: "11.00% of the AOI", a: 0.75, b: 0.89 },
+  { k: "mapped building",   sub: "9.82% of the AOI",  a: 0.20, b: 0.00 },
+  { k: "built landuse",     sub: "34.28% of the AOI", a: 0.48, b: 0.46 },
+  { k: "whole AOI",         sub: "mean over classified", a: 0.620, b: 0.617, dp: 3 },
+]);
+
+/* out/summary/war-damage.log — built-class area, hectares */
+grouped("c-built",
+  ["House", "Pavement", "BrickWall", "PavedRoad †"],
+  [7.44, 2.83, 1.93, 7.76],
+  [2.15, 1.50, 0.26, 1.73],
+  ["2022-10-29", "2025-06-06"],
+  { unit: " ha", fmtAxis: v => v.toFixed(0) + " ha" });
+
+/* out/summary/war-damage.log — sources of 2025 Clutter */
+hbar("c-clutter", [
+  { k: "House",        v: 3.39, hi: true, tip: "3.39 ha — 29.4% of the 11.50 ha of new Clutter" },
+  { k: "Shadow",       v: 1.92, tip: "1.92 ha — 16.7%. NOT change: ground unobserved in 2022, revealed by a higher June sun" },
+  { k: "Rendzina",     v: 1.52, tip: "1.52 ha — 13.2%. Ordinary class churn" },
+  { k: "Maquis",       v: 1.13, tip: "1.13 ha — 9.8%" },
+  { k: "Pavement",     v: 0.78, hi: true, tip: "0.78 ha — 6.8%" },
+  { k: "DryGrassland", v: 0.52, tip: "0.52 ha — 4.5%" },
+], { max: 4, mute: true, rowH: 32, padL: 150, fmt: v => v.toFixed(2) + " ha",
+     fmtAxis: v => v.toFixed(1) + " ha", label: "sources of the 2025 new Clutter area" });
+
+/* out/summary/discriminators.log — superclass shares */
+diverge("c-delta", [
+  { k: "vegetation",  a: 30.18, b: 70.77, v: 40.59 },
+  { k: "rock",        a: 2.08,  b: 5.04,  v: 2.96 },
+  { k: "road",        a: 5.36,  b: 5.46,  v: 0.10 },
+  { k: "artifact",    a: 10.04, b: 7.54,  v: -2.49 },
+  { k: "built",       a: 5.63,  b: 1.81,  v: -3.83 },
+  { k: "agriculture", a: 12.00, b: 0.24,  v: -11.76 },
+  { k: "soil",        a: 34.66, b: 9.07,  v: -25.59 },
+]);
+
+/* out/summary/full-histograms.json */
+grouped("c-classes",
+  ["Rendzina","DryGrassland","Batha","Garigue","UnirrigatedOrchard","Maquis",
+   "Shadow","Clutter","TerraRosa","DirtRoad","House","PavedRoad"],
+  [29.71, 8.82, 7.14, 7.03, 10.42, 7.18, 9.57, 0.47, 4.83, 0.98, 3.44, 3.59],
+  [7.49, 31.88, 27.01, 11.34, 0.24, 0.53, 2.11, 5.44, 0.54, 3.74, 0.99, 0.80],
+  ["2022-10-29", "2025-06-06"], { unit: "%" });
+
+/* out/summary/s6-full.log — share of the differing area */
+hbar("c-s6", [
+  { k: "real-change",    v: 61.05, tip: "1,583,489 m² — mostly the season and the abandoned land" },
+  { k: "noise",          v: 15.54, tip: "402,959 m² — mostly Shadow → vegetation" },
+  { k: "succession",     v: 13.61, tip: "353,031 m² — along the Mediterranean series" },
+  { k: "demolition",     v: 6.30,  hi: true, tip: "163,531 m² — House → Clutter across 2,579 components. Correct." },
+  { k: "infrastructure", v: 2.61,  hi: true, tip: "67,739 m² — PavedRoad → DirtRoad across 1,623 components. Correct." },
+  { k: "construction",   v: 0.84,  tip: "21,770 m²" },
+  { k: "impossible",     v: 0.04,  tip: "988 m²" },
+  { k: "phenology",      v: 0.004, tip: "103 m² — the phenology gate is two hard-coded pairs and fired on almost nothing" },
+], { max: 64, mute: true, rowH: 30, padL: 150, fmt: v => v.toFixed(2) + "%",
+     fmtAxis: v => v.toFixed(0) + "%", label: "S6 categories by share of differing area" });
+</script>

@@ -350,6 +350,30 @@ scene is invariant. It has to be an invariant of the *pipeline*:
 
 Neither is a scene statistic, and neither would have refused this pair.
 
+**2.13 Every area RT reports on a Web-Mercator raster is 42.5% too large.** ✔ new 2026-09-03, found by adversarial review
+[loader.geotiff_gsd](src/segmap_digest/loader.py#L369) converts degrees to metres
+for a *geographic* CRS — that fix is in the code with a comment explaining that
+taking `abs(a)` at face value would make every area 1e10 times too small. It does
+**not** apply the Web-Mercator scale factor. EPSG:3857 is a projected CRS whose
+unit is a pseudo-metre: at latitude φ, one unit is `cos(φ)` true ground metres.
+
+Measured on `data/raw/*.tif` (EPSG:3857, 33.107 N): the header says 0.125 m/px,
+the ground truth is **0.1047 m/px**, and every *area* is inflated by
+`1/cos²(φ)` = **1.4252**. The AOI RT calls 308.5 ha is **216.5 ha**. Every
+`area_m2` in S4, S5 and S6, every `min_area` threshold in m², every hectare in a
+report — all of them, on any 3857 input, silently.
+
+I documented this trap in `segment.py`'s own module docstring and then walked
+straight into it, quoting pseudo-hectares as hectares in a damage assessment
+(5.2). The docstring said the repo "takes the header at face value" and that
+`segment` would not "invent a different convention for itself". That was the
+wrong call: face value is wrong here, and the right place to fix it is
+`geotiff_gsd`, once, where the geographic case is already handled.
+
+**The fix is four lines** — multiply by `cos(lat)` when the CRS is Web Mercator —
+but it changes every area number the repo has ever produced on a 3857 raster and
+invalidates the cached indices keyed on GSD. **Owner call.** Not applied.
+
 ---
 
 ## 3. Scale walls
@@ -466,57 +490,83 @@ leave and keep the comment?
 > filename resolving — somebody else's `models/` directory should not break on
 > our rename — and the canonical name wins when both are present.
 
-**5.2 The pair records the destruction of a built-up area, and I first read it as a model swap.** ✔ corrected 2026-09-03
-The AOI is **33.107 N, 35.239 E — southern Lebanon, 2.1 × 1.0 km, 308.5 ha**, and
-per the project owner the interval between the two acquisitions contains the
-Israel–Lebanon war, in which buildings on this ground were destroyed by the IDF.
-That fact was not in the repo, and without it I reached the wrong conclusion.
-What the pair actually records, at full extent:
+**5.2 The pair records the destruction of a village — and the label rasters alone do not prove it.** ✔ corrected twice, 2026-09-03
+The AOI is **33.107 N, 35.239 E — southern Lebanon, 2.113 × 1.024 km, 216.5 ha of
+true ground** (the repo prints 308.5 ha; see 2.13). Per the project owner the
+interval between the two acquisitions contains the Israel–Lebanon war, and
+buildings on this ground were destroyed. What the pair records, in true ground
+hectares:
 
-| built class | 2022-10-29 | 2025-06-06 | |
+| class | 2022-10-29 | 2025-06-06 | |
 |---|---:|---:|---:|
-| House | 10.60 ha | 3.07 ha | **−71.1%** |
-| BrickWall | 2.75 ha | 0.37 ha | **−86.4%** |
-| PavedRoad | 11.06 ha | 2.46 ha | **−77.8%** |
-| Pavement | 4.03 ha | 2.14 ha | −47.0% |
-| **total built surface** | **28.44 ha** | **8.04 ha** | **−71.7%** |
+| House | 7.44 ha | 2.15 ha | −71.1% |
+| BrickWall | 1.93 ha | 0.26 ha | −86.4% |
+| Pavement | 2.83 ha | 1.50 ha | −47.0% |
+| **structures** | **12.19 ha** | **3.91 ha** | **−67.9%** |
+| *PavedRoad* | *7.76 ha* | *1.73 ha* | *−77.8% — excluded, see below* |
 
-And the rubble is where the buildings were: `Clutter` goes **1.44 → 16.77 ha, a
-factor of 11.6**, and its single largest source is `House` — **4.83 ha, 28.8% of
-all new Clutter**. `House → Clutter` spans 2,579 connected components, but **257
-of them (≥ 20 m²) hold 93% of the area**, median 0.4 m², largest 1,178 m². Those
-257 patches are a damage inventory, and a **lower bound on structures** rather
-than a count of them — adjacent buildings fuse into one component (see 3.3).
+`Clutter` goes **1.01 → 11.77 ha, ×11.6**, and `House` is the largest single
+source of the 11.50 ha of *new* Clutter at **3.39 ha = 29.4%**.
 
-**What I got wrong, and why.** I ran three discriminators and concluded the two
-rasters were "two mappings, not two dates". The null test was sound
-(`compare(A, A)` → `changed_frac 0.000000%`, 0 events) and the superclass
-arithmetic was correct. The verdict was not, because it rested on one premise
-stated as if it were a law: *"buildings do not vanish and asphalt does not become
-dirt."* In an AOI that was shelled, buildings vanish and roads go under rubble.
-The premise was an assumption about the world, imported silently into a test and
-never labelled as one — the same shape as the retired soil-genesis priors, and I
-did not recognise it while writing a register whose whole subject is that
-failure.
+**First correction: my verdict.** I originally called the pair "two mappings, not
+two dates" on the strength of a premise stated as a law — *"buildings do not
+vanish and asphalt does not become dirt."* In an area that was shelled they do.
+That was an assumption about the world, imported silently into a test and never
+labelled as one, which is the same shape as the retired soil-genesis priors and
+was written inside a register whose subject is that failure.
 
-**RT was right and I overrode it.** `s6_change` categorised `House → Clutter` as
-**demolition** over 48,255 m², and `PavedRoad → DirtRoad` as **infrastructure**.
-Those are the correct readings of this ground, produced by the repo's own
-categoriser, and I discounted them as artefacts of an incomparable pair.
+**Second correction, from adversarial review: the opposite over-claim.** Having
+been handed the war, I then asserted the label data *rules out* the segmenter.
+It does not, and a fresh reviewer took the argument apart by running it:
 
-**What is still genuinely open.** War explains the built half; Mediterranean
-phenology plus depopulation explains most of the rest — 2025's `DryGrassland`
-(98.4 ha) is **44.8% former `Rendzina`**, and late October (bare, end of the dry
-season) against early June (standing dried biomass) is a large seasonal contrast
-in this landscape, with abandoned cultivation on top of it. What neither
-explains is the **rock-class churn**: `LimestoneStoneyTerrain` retains 10.6%,
-`LimestoneRockyTerrain` 6.1%, `Water` 9.2%. Bedrock and water do not move for a
-war or a season. Those classes are tiny here (0.47–0.66 ha of 308), so this may
-be nothing but small-class boundary noise — but it is the one thread the
-corrected story does not close, and it is the thread that would still be
-explained by a retrained segmenter. **The model version per acquisition is still
-worth having**; it is no longer the headline.
-*(Numbers: `out/summary/war-damage.log`, `out/summary/discriminators.log`.)*
+- **84.1% of pixels changed label; 62.5% changed superclass.** In that context
+  House's 18.2% retention is *above the scene median* — Batha 46.4, DryGrassland
+  40.3, DirtRoad 33.4, Clutter 26.0, Garigue 24.1, **House 18.2**, Rendzina 14.0,
+  Maquis 4.3, TerraRosa 1.4, IrrigatedOrchard 0.0.
+- House's −71.1% is only the **9th-largest decline** among classes over 1 ha.
+  `IrrigatedOrchard` went **−100.0%** and nobody destroyed the irrigated orchards.
+- Every discriminator I proposed — per-building bimodality of the Clutter
+  fraction, spatial clustering of damage — **reproduces identically on
+  `PavedRoad → DirtRoad`**, where the road network is provably intact (road
+  superclass +0.10 pt, only 3.0% of PavedRoad becoming Clutter). Bimodality and
+  clustering are just what a per-object segmenter relabel looks like.
+- The shadow test (a flattened building stops casting one) is sound in principle
+  and **null in practice**: at 33 N in June the sun is near zenith, and Shadow
+  around buildings is at scene-background level for destroyed and intact alike
+  (p = 0.64).
+
+**What actually settles it is the imagery**, which the reviewer opened and I did
+not: the village is levelled. The honest formulation is *"the label rasters are
+consistent with destruction, and the source orthos confirm it"* — never *"the
+labels rule out the alternative."*
+
+**Three things the numbers get wrong in my own favour, and one against:**
+1. **`PavedRoad` does not belong in a structural total.** 53.0% of it became
+   `DirtRoad` and only 3.0% became `Clutter`, on a conserved road network — a
+   surface-type relabel, not destruction. It was 39% of the "built collapse" I
+   quoted. Excluding it: **−67.9%**, on a defensible base.
+2. **`BrickWall`'s −86.4% is mostly a vegetation relabel** — 30.8% to
+   `DryGrassland`, 12.7% to `Batha`, only 18.2% to `Clutter`.
+3. **16.7% of new Clutter was `Shadow` in 2022** — ground never observed at t1.
+   Shadow fell 78% between an October low sun and a June high sun. That share is
+   newly *visible*, not newly *changed*.
+4. **Against me: the damage count is far too low.** `House → Clutter` gives 2,579
+   components of which **220 clear a true 20 m² floor**, holding 91% of the area.
+   I called 220 a lower bound on structures because components fragment — the
+   reviewer measured **1.09 patches per building, so fragmentation is a
+   non-issue**. The real reasons it is a floor are worse: burning the cached OSM
+   snapshot shows **2.08 mapped buildings per `House` component** (adjacent
+   buildings share walls and merge), and of a random 12 OSM buildings the metric
+   scores as undamaged, **12 were destroyed in the imagery**. The bound is low by
+   roughly **2–4×**, and the defensible statement is that essentially the entire
+   building stock in this AOI is destroyed or heavily damaged.
+
+**Still open, and small:** rock and water classes retain 6–11% across the pair,
+which neither war nor season explains — but they hold 1.18 ha of 216.5 (0.38%),
+and four lithology classes materialise from zero, so this is segmenter behaviour
+on tiny classes. The model version per acquisition would settle it and is worth
+having; it is not the story.
+*(`out/summary/war-damage-v2.log`, `out/summary/war-damage.log`, `out/summary/discriminators.log`.)*
 
 **5.3 `roads` and `dsem_landcover` are dropped.** ✔ by design, today
 Both come free in the same forward pass — `roads` is a binary mask,
