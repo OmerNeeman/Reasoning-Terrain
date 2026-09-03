@@ -42,7 +42,18 @@ A second round of answers came back on **2 September**:
 | §2.11 — the conflicting finding count | **settle it** | **done — there was no conflict.** 26,592 confirmed by re-run; one sentence was quoting a superseded column. My framing was wrong; see 2.11 |
 | Q5 — soft-pred export · Q6 — S4 score-or-classes | owner is getting both settled | awaiting the answers |
 
-Running the discriminators also turned up a new defect in our own S6 — see 2.12.
+Running the discriminators also turned up what looked like a new defect in our
+own S6 — see 2.12, and the correction below.
+
+**3 September — the owner supplied the fact the repo did not have**, and it
+overturns the largest conclusion in this file. The AOI is southern Lebanon and
+the interval between the two acquisitions contains the Israel–Lebanon war; the
+built surface on this ground was destroyed. So the pair is not "two mappings" —
+it is a damage record, RT's own `demolition` category read it correctly, and I
+talked myself out of the right answer on the strength of an unlabelled
+assumption. Rewritten: **5.2** (the verdict), **2.12** (the gate I proposed would
+have suppressed the finding), and new item **1.8** (the taxonomy has no damage
+class). The methodological lesson is in 5.2 and it is not a small one.
 
 Deliberately **not** done: everything else in this file. In particular 2.4's
 underlying defect is unchanged — S1 now states that its speck check is "small and
@@ -133,6 +144,24 @@ it — see 2.9 first.**
 2.5 years apart, 197 Mpx each at 0.125 m/px. `segmap segment` turned 24 Mpx of
 each into label rasters and `segmap solve s6` ran across them for the first time
 on real ground. **The result is itself an open issue — see 5.2.**
+
+**1.8 The taxonomy has no damage class, and `Clutter` is silently serving as one.** ✔ new 2026-09-03
+On this AOI the question a user actually has is *what was destroyed*, and the
+answer is being carried by `Clutter` — a catch-all whose own definition is
+out-of-vocabulary debris, and which `s1_audit` reports as
+*"objects outside the 47-class vocabulary; detector targets"*. It grew 11.6×
+between the two dates and 28.8% of the new area was `House` (5.2). So the most
+consequential signal in this pair is riding on the one class the taxonomy
+defines as *"we do not have a word for this"*.
+
+Downstream consequences that are already visible: `class_distance("House",
+"Clutter")` is a cross-superclass 1.0, so a demolished building scores as
+maximally strange (2.4); `s2_adjudicate` will consider switching a rubble region
+back to `House` on geometry; and S1's OOV check treats the rubble field as a
+detector target rather than as the finding. **This needs the class owner**, and
+it is a taxonomy question, not a code one: is damage a class, a *state* attached
+to a class (`House/destroyed`), or a separate layer? The third is probably
+right, and it is the one the current schema cannot express.
 
 ---
 
@@ -296,24 +325,30 @@ and called exactly nowhere.
   five minutes of compute. The rebuild cost 5 min 06 s and 27 GB, not the ~24 min
   and 47 GB the README's cold-path table led me to quote.
 
-**2.12 S6 has no guard against a pair that came from two different mappings.** ✔ new 2026-09-02
-Run over the full 197 Mpx pair that 5.2 rejects, `s6_change` reports **84.1% of
-co-valid pixels differ** and then adjudicates **61% of the differing area as
-`real-change`**, printing *"71% of the differing area is plausibly REAL
-change"*. It calls `House → Clutter` **demolition** over 48,255 m² and 2,579
-components, and `PavedRoad → DirtRoad` **infrastructure** over 1,623 components.
-Every one of those categories is defensible *given* two dates of one mapping —
-and the whole point of 5.2 is that this is not that. The categoriser has no
-precondition: nothing anywhere asks whether the two rasters are comparable
-before their difference is described.
+**2.12 ~~S6 has no guard against a pair from two different mappings~~ — the guard I proposed would have suppressed the finding.** ✔ corrected 2026-09-03
+The original entry said `s6_change` should refuse a pair whose **built-class
+retention** is implausible, and named the numbers: 18.2% of `House` surviving,
+asphalt becoming dirt. On this AOI that gate would have refused the pair — and
+the pair records the destruction of 71.7% of a village's built surface (5.2).
+**A comparability check keyed on the built environment suppresses exactly the
+change it is most important to detect.** The proposal was worse than the absence
+of one.
 
-The check is cheap and the discriminators already are it: **built-class
-retention** (a pair where 18% of `House` stays `House` and asphalt becomes dirt
-is not two dates of one map) and **overall pixel agreement** (15.89% here).
-Either belongs in front of `compare()` as a stated refusal, exactly like the
-`registered=False` short-circuit that reviewers called exemplary. Without it, S6
-is at its most confident precisely where it is most wrong — the failure shape
-this repo names in its own design rules.
+What survives of the item is narrower and still real: `s6_change` describes any
+difference it is handed without asking what produced it, and both the useful
+answer (destruction) and the useless one (a retrained segmenter) arrive through
+the same code path looking identical. But the discriminator cannot be an
+invariant of the *scene*, because in the cases that matter nothing about the
+scene is invariant. It has to be an invariant of the *pipeline*:
+
+- **the model version per raster**, stamped as metadata. `segmap segment`
+  already writes `ST_MODEL` and `ST_MODEL_NATIVE_GSD` tags, which is why this
+  week's rasters are self-describing and the two source orthos are not. If the
+  versions match, drift is excluded and every category means what it says.
+- **failing that, the acquisition dates**, which at least let the phenology
+  categories be argued about rather than assumed.
+
+Neither is a scene statistic, and neither would have refused this pair.
 
 ---
 
@@ -431,47 +466,57 @@ leave and keep the comment?
 > filename resolving — somebody else's `models/` directory should not break on
 > our rename — and the canonical name wins when both are present.
 
-**5.2 The two dates disagree about the ground far more than the ground changed.** ✔ new today
-Same footprint, same crop, similar radiometry (mean RGB 131/103/85 vs
-118/95/87), 24 Mpx each:
+**5.2 The pair records the destruction of a built-up area, and I first read it as a model swap.** ✔ corrected 2026-09-03
+The AOI is **33.107 N, 35.239 E — southern Lebanon, 2.1 × 1.0 km, 308.5 ha**, and
+per the project owner the interval between the two acquisitions contains the
+Israel–Lebanon war, in which buildings on this ground were destroyed by the IDF.
+That fact was not in the repo, and without it I reached the wrong conclusion.
+What the pair actually records, at full extent:
 
-| | 2022-10-29 | 2025-06-06 |
-|---|---|---|
-| top classes | Rendzina 32%, Maquis 10%, Shadow 10%, UnirrigatedOrchard 9%, House 8% | DryGrassland 33%, Batha 17%, Clutter 11%, Garigue 8%, Rendzina 7% |
+| built class | 2022-10-29 | 2025-06-06 | |
+|---|---:|---:|---:|
+| House | 10.60 ha | 3.07 ha | **−71.1%** |
+| BrickWall | 2.75 ha | 0.37 ha | **−86.4%** |
+| PavedRoad | 11.06 ha | 2.46 ha | **−77.8%** |
+| Pavement | 4.03 ha | 2.14 ha | −47.0% |
+| **total built surface** | **28.44 ha** | **8.04 ha** | **−71.7%** |
 
-`segmap solve s6` reports **87.4% of co-valid pixels differ**, adjudicated 58%
-real-change / 17% noise / 12% demolition. `Rendzina → DryGrassland` alone is
-63,706 m² over 5,728 components, and `House → Clutter` is called demolition
-across **630 components**. Either the ground genuinely did that, or the segmenter
-reads the same ground differently across dates — which is exactly S6 open
-question 2, now with real numbers attached.
+And the rubble is where the buildings were: `Clutter` goes **1.44 → 16.77 ha, a
+factor of 11.6**, and its single largest source is `House` — **4.83 ha, 28.8% of
+all new Clutter**. `House → Clutter` spans 2,579 connected components, but **257
+of them (≥ 20 m²) hold 93% of the area**, median 0.4 m², largest 1,178 m². Those
+257 patches are a damage inventory, and a **lower bound on structures** rather
+than a count of them — adjacent buildings fuse into one component (see 3.3).
 
-> **DISCRIMINATORS RUN 2026-09-02 — the pair is not differenceable.** Three
-> tests, all at the full 197 Mpx, none needing an opinion from outside the repo:
->
-> 1. **Null test: all-quiet.** `s6_change.compare(A, A)` returns
->    `changed_frac 0.000000%`, 0 events, no categories. So the machinery is not
->    inventing change, and the disagreement is in the inputs.
-> 2. **Built surface, which cannot flip with a season.** Of 2022's `House` area
->    only **18.2%** is `House` in 2025 — **45.5% becomes `Clutter`**. Of
->    `PavedRoad`, **18.0%** survives and **53.0% becomes `DirtRoad`**.
->    `BrickWall` retains **2.2%**, `Car` **0.0%**. Buildings do not vanish, and
->    asphalt does not become dirt.
-> 3. **The whole map slides by superclass:** soil **−25.6 points** (34.7% →
->    9.1%), agriculture **−11.8** (12.0% → 0.2% — the orchards are gone),
->    vegetation **+40.6** (30.2% → 70.8%). Overall pixel agreement between the
->    two dates: **15.89%**.
->
-> A whole-scene orchard-to-vegetation and asphalt-to-dirt slide is not phenology.
-> **This is S6's open question 2 answered in the affirmative: these are not two
-> dates of one map, they are two mappings.** Either the segmenter was retrained
-> between the acquisitions or the domain shift moved the decision boundaries
-> wholesale, and *which* cannot be settled from inside this repo — it needs the
-> model version for each acquisition, which is exactly what S6 asked to have
-> logged. **Consequences:** no S6 number on this pair is reportable; the next S6
-> feature is model-version logging, not co-registration hardening; and 1.7 is
-> only half an unblock — we have a second date, not a comparable one.
-> Full output: `out/summary/discriminators.log`.
+**What I got wrong, and why.** I ran three discriminators and concluded the two
+rasters were "two mappings, not two dates". The null test was sound
+(`compare(A, A)` → `changed_frac 0.000000%`, 0 events) and the superclass
+arithmetic was correct. The verdict was not, because it rested on one premise
+stated as if it were a law: *"buildings do not vanish and asphalt does not become
+dirt."* In an AOI that was shelled, buildings vanish and roads go under rubble.
+The premise was an assumption about the world, imported silently into a test and
+never labelled as one — the same shape as the retired soil-genesis priors, and I
+did not recognise it while writing a register whose whole subject is that
+failure.
+
+**RT was right and I overrode it.** `s6_change` categorised `House → Clutter` as
+**demolition** over 48,255 m², and `PavedRoad → DirtRoad` as **infrastructure**.
+Those are the correct readings of this ground, produced by the repo's own
+categoriser, and I discounted them as artefacts of an incomparable pair.
+
+**What is still genuinely open.** War explains the built half; Mediterranean
+phenology plus depopulation explains most of the rest — 2025's `DryGrassland`
+(98.4 ha) is **44.8% former `Rendzina`**, and late October (bare, end of the dry
+season) against early June (standing dried biomass) is a large seasonal contrast
+in this landscape, with abandoned cultivation on top of it. What neither
+explains is the **rock-class churn**: `LimestoneStoneyTerrain` retains 10.6%,
+`LimestoneRockyTerrain` 6.1%, `Water` 9.2%. Bedrock and water do not move for a
+war or a season. Those classes are tiny here (0.47–0.66 ha of 308), so this may
+be nothing but small-class boundary noise — but it is the one thread the
+corrected story does not close, and it is the thread that would still be
+explained by a retrained segmenter. **The model version per acquisition is still
+worth having**; it is no longer the headline.
+*(Numbers: `out/summary/war-damage.log`, `out/summary/discriminators.log`.)*
 
 **5.3 `roads` and `dsem_landcover` are dropped.** ✔ by design, today
 Both come free in the same forward pass — `roads` is a binary mask,
